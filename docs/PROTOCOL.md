@@ -1,0 +1,47 @@
+# Harbor protocol v1
+
+Status: implementation contract, 2026-09-18. Desktop is authoritative; mobile has no host or credential mutations. Each desktop owns its vault identity. Desktop-to-desktop replication is outside v1. Mac is the user's primary authority; Linux exercises the same role independently.
+
+## Primitive encoding
+
+UTF-8 JSON. All binary fields use standard padded RFC4648 base64, never base64url. IDs are lowercase UUID strings. Times are integer Unix seconds. Integers must fit JavaScript safe integer range. Random values come from platform cryptographic randomness. AES-256-GCM uses a random 12-byte nonce and 16-byte tag on every message. Ed25519 public keys are raw 32 bytes; signatures 64 bytes. Ed25519 signs exact bytes, without JSON canonicalization.
+
+An encrypted envelope has exactly the required fields `nonce`, `ciphertext`, `tag`, all base64 strings. Routing fields described below are also allowed. AAD is UTF-8 of the exact specified string. Validate decoded lengths and bounds before processing. Unknown versions fail closed. Authentication failure never changes persisted state.
+
+## Host schema
+
+Each host has `id`, `name`, `hostname`, `port`, `username`, `group`, `authType`, `password`, `privateKey`, `passphrase`, `hostKey`, `notes`. Strings except integer port. `authType` is `password` or `key`. Inapplicable credentials are empty strings. `hostKey` is the server public key in OpenSSH format `algorithm base64-wire-key`, without hostname or trailing comment. It may be empty until desktop verification. Mobile MUST refuse connections without a synced hostKey, and refuse a different server key. Desktop provides scan and explicit trust confirmation; scanning itself does not establish trust. Compare the complete server key blob, or its SHA-256 fingerprint, before releasing credentials. Hostnames/usernames must be validated against command argument injection; never construct shell command strings from records.
+
+Port range 1..65535; no empty hostname, username, name; maximum 10000 hosts, 256 KiB per private key, 1 MiB per host; total decrypted snapshot maximum 8 MiB. Reject duplicates by host id and invalid records atomically rather than partially importing. Desktop revision starts at 1 and increases on every host change including removal and server-key change. Credential storage and revision are saved atomically.
+
+## First pairing
+
+Desktop starts a local-network listener only while unlocked and sharing is enabled. Default port 45873, configurable if occupied. No cloud, discovery service, or public listener provisioning. Plain HTTP carries application-encrypted payloads: host data and credentials are never sent as plaintext. Path, device ID, sizes and traffic timing are not secret. No redirects. Network requests have timeouts and bounded bodies.
+
+User chooses Pair device. Desktop creates a one-time invitation valid 5 minutes and displays a QR code and copyable pairing JSON with fields `version:1`, `url` (e.g. http://192.168.1.5:45873, no trailing slash), `vaultId`, `pairId`, `secret` (random 32-byte base64), `publicKey` (desktop Ed25519 public key), `expiresAt`, `desktopName`. URL must be an http IP-literal origin on loopback or a private/link-local IP (including IPv6 ULA); reject userinfo, fragments, path other than /, queries, public IPs, and DNS names. This is local-network v1; VPN private addresses work. QR is an out-of-band secret: do not log it, persist invitations, or use clipboard automatically. Dismissal cancels unapproved invitation.
+
+Android scans or pastes invitation, validates it, and generates deviceId UUID and clientNonce 32 random bytes. It prepares encrypted JSON `{deviceId, deviceName, clientNonce}` using invitation secret and AAD `harbor/pair-request/v1/<pairId>`. POST `/v1/pair/<pairId>` carries the envelope. Android retries that SAME envelope every 2 seconds until approved, denied or expired. Limit deviceName to 80 characters. First valid request binds invitation to this deviceId AND clientNonce; other requests are rejected. Both devices show a six-digit comparison code: first four bytes of SHA256(secret || decoded clientNonce), interpreted unsigned big-endian, modulo 1000000, padded with zeroes. User compares and explicitly approves on desktop.
+
+Pending: HTTP 202 with `{status:pending}`. Denied: 403; unknown/expired/cancelled: 410. No secrets in errors. On approval desktop creates a random 32-byte syncKey and saves paired device in its encrypted vault before returning success. HTTP 200 returns an envelope encrypted with invitation secret and AAD `harbor/pair-response/v1/<pairId>`, plaintext `{version:1,deviceId,vaultId,syncKey,desktopName}`. Keep the approved response available only to the bound request until original invitation expiry so a lost response can be retried; never approve another device from the same invitation. Android stores syncKey, pinned publicKey, deviceId, vaultId and URL in platform secure storage, then performs sync. Invitations and pending requests are memory-only. Rate limit pairing attempts and active sockets.
+
+## Manual sync
+
+Android user presses Sync now while paired desktop is unlocked and sharing enabled. It creates a fresh 32-byte requestId. POST `/v1/sync` body is an envelope plus routing `deviceId`. Encrypt plaintext `{version:1,vaultId,requestId}` with syncKey and AAD `harbor/sync-request/v1/<deviceId>`.
+
+Desktop validates device and request, then serializes a snapshot: `{version:1,vaultId,revision,generatedAt,requestId,hosts:[host objects]}`. `payload` is base64 of these exact UTF-8 JSON bytes. `signature` is base64 Ed25519 signing UTF-8 `harbor.snapshot.v1\n` followed by the ASCII payload base64 string. Signed object is `{payload,signature}`. Encrypt this object with syncKey, AAD `harbor/sync-response/v1/<deviceId>`, and return envelope HTTP 200.
+
+Mobile authenticates outer envelope, verifies signature against QR-pinned desktop publicKey, parses snapshot, checks exact vaultId and requestId, validates version/schema/bounds and rejects a revision lower than last accepted. Equal revisions are permitted because requestId/generatedAt change on repeat sync. Replace the ENTIRE previous host collection (including deletions) and revision atomically only after all checks. RequestId binding prevents old response replay. There is no mobile write endpoint. Unknown/revoked devices receive 403; locked/disabled listener is stopped or returns 503. Failures preserve the previously accepted vault. Store paired identity, last revision, and data together so partial writes cannot roll back verification state.
+
+Desktop can revoke each device, deleting its syncKey and any related invitation, preventing future sync. Revocation cannot erase credentials already delivered to an offline phone; SSH credentials must be rotated at servers to remove access. Mobile offers Forget desktop, deleting its local vault and key material; this is not an authoritative host edit.
+
+## Local vault
+
+Mac: random AES-256-GCM vault encryption key protected by Keychain; encrypt all hosts, credentials, device syncKeys and signing private key. Linux: AES-256-GCM with a passphrase-derived key (PBKDF2-HMAC-SHA256, 600000 iterations, random 16-byte salt, 32-byte result), unless secure keyring integration is supplied. Atomic owner-only writes. Explicit vault lock clears in-memory state and stops sharing; never fall back to plaintext. Android: encryption key protected by Android Keystore via flutter_secure_storage; encrypted snapshot plus pairing state, backup disabled, no credential reveal/copy/editor. Idle/background lock where feasible. Do not log secrets, session input, pairing material, or decrypted snapshots.
+
+## Transport limits
+
+HTTP JSON with Content-Length; close connection after response. Incoming request body max 512 KiB, headers max 16 KiB, whole request read deadline 10 seconds. Response max 16 MiB to allow both layers of base64 overhead. Reject chunked uploads, malformed framing, unsupported methods, oversized bodies, and duplicate/conflicting Content-Length. Cap concurrent connections and pairing request rates. These limits apply to both desktop implementations. Cryptography uses maintained library primitives, not hand-written algorithms.
+
+## SSH
+
+Use existing terminal engines. Password, private-key and encrypted-private-key authentication must work. Host key verification precedes authentication. Credentials never appear in process arguments, process environment, application logs or session transcripts. Desktop SSH_ASKPASS helpers may receive a socket path/capability token, never the actual password; enforce private socket directory and peer/process scoping where possible. Private-key temporary files, when unavoidable for OpenSSH, are mode 0600 in a mode 0700 directory and removed on session termination/error and startup cleanup. Use dedicated app known_hosts populated from the approved public key, StrictHostKeyChecking=yes, no shell interpolation, no inherited user SSH config that weakens verification. No automatic OSC52 clipboard writes from terminal output.

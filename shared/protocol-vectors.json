@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "signingSeed": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+  "publicKey": "Kay64UG8yvCyLhqU000LxzYeUm0L/hLIl5S8kyKWbdc=",
+  "secret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+  "clientNonce": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=",
+  "comparisonCode": "136432",
+  "snapshot": {
+    "version": 1,
+    "vaultId": "33333333-3333-4333-8333-333333333333",
+    "revision": 7,
+    "generatedAt": 1800000000,
+    "requestId": "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8=",
+    "hosts": [
+      {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "name": "Fixture",
+        "hostname": "127.0.0.1",
+        "port": 2222,
+        "username": "harbor",
+        "group": "Fixtures",
+        "authType": "password",
+        "password": "fixture-only",
+        "privateKey": "",
+        "passphrase": "",
+        "hostKey": "",
+        "notes": "Unicode ✓"
+      }
+    ]
+  },
+  "payload": "eyJ2ZXJzaW9uIjoxLCJ2YXVsdElkIjoiMzMzMzMzMzMtMzMzMy00MzMzLTgzMzMtMzMzMzMzMzMzMzMzIiwicmV2aXNpb24iOjcsImdlbmVyYXRlZEF0IjoxODAwMDAwMDAwLCJyZXF1ZXN0SWQiOiJnSUdDZzRTRmhvZUlpWXFMakkyT2o1Q1JrcE9VbFphWG1KbWFtNXlkbnA4PSIsImhvc3RzIjpbeyJpZCI6IjQ0NDQ0NDQ0LTQ0NDQtNDQ0NC04NDQ0LTQ0NDQ0NDQ0NDQ0NCIsIm5hbWUiOiJGaXh0dXJlIiwiaG9zdG5hbWUiOiIxMjcuMC4wLjEiLCJwb3J0IjoyMjIyLCJ1c2VybmFtZSI6ImhhcmJvciIsImdyb3VwIjoiRml4dHVyZXMiLCJhdXRoVHlwZSI6InBhc3N3b3JkIiwicGFzc3dvcmQiOiJmaXh0dXJlLW9ubHkiLCJwcml2YXRlS2V5IjoiIiwicGFzc3BocmFzZSI6IiIsImhvc3RLZXkiOiIiLCJub3RlcyI6IlVuaWNvZGUg4pyTIn1dfQ==",
+  "signature": "AxU2cOVwLNd1AreSxfou3W8vdfnGYOnPsqapRLoqAO3ZPzFtZlQJM7otSCeDZ0efVjS3ehVnnp6gJtAPaINXCw==",
+  "messages": [
+    {
+      "name": "pairRequest",
+      "key": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+      "aad": "harbor/pair-request/v1/11111111-1111-4111-8111-111111111111",
+      "plaintext": "{\"deviceId\":\"22222222-2222-4222-8222-222222222222\",\"deviceName\":\"Fixture phone\",\"clientNonce\":\"YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=\"}",
+      "envelope": {
+        "nonce": "AAECAwQFBgcICQoL",
+        "ciphertext": "QScIHQHlJ8WLdqL4mt/+ibH2HzteYZ9h3BLFonODW3N4QvYzlnA5TYIqSq1zmeXCGz0mH7IhbU1Q5snUPABs3OQ1k9SC2EWq8kOw3XFzqErbsoabIMNxeYdInnIsRhgPyMSMtjGqFTRyyNWsUE8/Jvq7L2aSqPTvBFMB5ik70yo9cmJ2C/3FkI4N7kyn",
+        "tag": "yDgosj1FtdBSWcDWbSStoA=="
+      }
+    },
+    {
+      "name": "pairResponse",
+      "key": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+      "aad": "harbor/pair-response/v1/11111111-1111-4111-8111-111111111111",
+      "plaintext": "{\"version\":1,\"deviceId\":\"22222222-2222-4222-8222-222222222222\",\"vaultId\":\"33333333-3333-4333-8333-333333333333\",\"syncKey\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\",\"desktopName\":\"Fixture desktop\"}",
+      "envelope": {
+        "nonce": "DA0ODxAREhMUFRYX",
+        "ciphertext": "vlAItEr+mjAHGXR/JMDvTKp0050zJpN6jKr//1z2k7MgU0LrNFrigZAwPsIdXoxdfZiwbu5BJW+Gd5kedKzbwp2vicnjwEJSdFhKeZYQ///0DYC+pcSjYeJRys4dFFUlqTzZRGFiG5KdNhyXxHtMJJ/d71zIOIiEZIgsjFt7ipQZHg8zSVxw5rKBcKFCD3BvXWyVBUz471LBsd1RUcTxNCqMUd6qnJha/byObKHbVzRSIlEPi6d0AdUY0xSO9y55dsFUAsIxpMuj",
+        "tag": "1no4UPrLuMNLxwA5IcqkQQ=="
+      }
+    },
+    {
+      "name": "syncRequest",
+      "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "aad": "harbor/sync-request/v1/22222222-2222-4222-8222-222222222222",
+      "plaintext": "{\"version\":1,\"vaultId\":\"33333333-3333-4333-8333-333333333333\",\"requestId\":\"gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8=\"}",
+      "envelope": {
+        "nonce": "GBkaGxwdHh8gISIj",
+        "ciphertext": "aD02dak6DCBvIYf4f/m2L2WVjg//cM8mUEQTs78M8VlfXB3okKUQ75XCxBuW7Hj4zgTdZetfOJ9IDVOijxOUR1u74jJSgCQLgTXcNDvUIhNIxZPzq2c6X0ahnXFf1Bga1Uh+z/+4rdHoSrrsjaf0Sf6a0lMwi/UnmQ==",
+        "tag": "FPlyMxcrzzxVWdP54DBAJw=="
+      }
+    },
+    {
+      "name": "syncResponse",
+      "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "aad": "harbor/sync-response/v1/22222222-2222-4222-8222-222222222222",
+      "plaintext": "{\"payload\":\"eyJ2ZXJzaW9uIjoxLCJ2YXVsdElkIjoiMzMzMzMzMzMtMzMzMy00MzMzLTgzMzMtMzMzMzMzMzMzMzMzIiwicmV2aXNpb24iOjcsImdlbmVyYXRlZEF0IjoxODAwMDAwMDAwLCJyZXF1ZXN0SWQiOiJnSUdDZzRTRmhvZUlpWXFMakkyT2o1Q1JrcE9VbFphWG1KbWFtNXlkbnA4PSIsImhvc3RzIjpbeyJpZCI6IjQ0NDQ0NDQ0LTQ0NDQtNDQ0NC04NDQ0LTQ0NDQ0NDQ0NDQ0NCIsIm5hbWUiOiJGaXh0dXJlIiwiaG9zdG5hbWUiOiIxMjcuMC4wLjEiLCJwb3J0IjoyMjIyLCJ1c2VybmFtZSI6ImhhcmJvciIsImdyb3VwIjoiRml4dHVyZXMiLCJhdXRoVHlwZSI6InBhc3N3b3JkIiwicGFzc3dvcmQiOiJmaXh0dXJlLW9ubHkiLCJwcml2YXRlS2V5IjoiIiwicGFzc3BocmFzZSI6IiIsImhvc3RLZXkiOiIiLCJub3RlcyI6IlVuaWNvZGUg4pyTIn1dfQ==\",\"signature\":\"AxU2cOVwLNd1AreSxfou3W8vdfnGYOnPsqapRLoqAO3ZPzFtZlQJM7otSCeDZ0efVjS3ehVnnp6gJtAPaINXCw==\"}",
+      "envelope": {
+        "nonce": "JCUmJygpKissLS4v",
+        "ciphertext": "iK3Tv1oiMkhdxV83cO0MJ5nOMdA3WutNk1wGP921lFxMssobzhHprdoqX1GqqYxDe8vdtTy86nKiAjFMqdy4Slon/NP5A3m0QQw+DfJHIfuQfuOvLj+kmdozW+Pkwb9NxkzFzCqsb1vvCWBuqP6MrGcZ5H2ahkCXwF4o66cZRmQ4vb7EG+JppcWB7ab+4a4UGSkcbg4xAZpAfUH3j5cJE38uCC9zHhhdgg4qG4FBMgzcCqHfnVN0PfDa+4Hx+JpqBimW42QMytpxOZn/Gm+I7BjWdxBbsO8F90IvNMRth0vRjjDLm6mtmQh9f6CvfAP7TG4Q+4fQLrfhB8YG3e1oU4lx33mttz5IpneYXu5iOGegMzTEXwMYtja2wJzemaltYWZ42jv/iw4fqkyD3/4wjOF57JNQKFD5K7V/BKGPJkXX0z/rPDKJsQ1YSHTsgUBKfP75S3ONPTs2N9CLw73UdXW5cTwgdLYkz5A+s5oVXi9vDiA7oJtnRfk6kWA5TOrsOfbMw1L7Reog0eJH+yAKsZqUEsZV8qBUs0rr7pLEHWHPbrMqpYcpdUaicV44fe3P9f7Tkt/Q3jBkik9o3pv5XGLveITuDgfHIYJhFXX+v6d19baLhjpFK20Fs6NzFVmfrg83L9lNZ8Z1qlTfzACfoV+vQQm8UVYjfYGi81J/OnFhpLUwZDVEjn+2cUDByhZmeUlDezhxSW0icF3B1np5zYJkUx6MrRSdEh9NeWctAMC/XBppyokODTImgscWWXg4DIHRQLfM7lrIhBk4f/ANmpHOV/S0guskNK592Zz2LfWgUXSAMh/cuaX9YqrrrqIFQuIrwYf/uzoU+jzvG1b56pEG5vT0AUS2LjY5GlO9WlGx/rnuO6ydcYPYwPear6WUdsO8W5hjKIAQ",
+        "tag": "Meax94RDKym2Cb/y8PCWJg=="
+      }
+    }
+  ],
+  "pbkdf2": {
+    "password": "fixture master passphrase",
+    "salt": "AAECAwQFBgcICQoLDA0ODw==",
+    "rounds": 600000,
+    "key": "tMx7BikRM0N5M/J7o9cYr8WwhA5Yvb+onKsYilwfXu8="
+  }
+}

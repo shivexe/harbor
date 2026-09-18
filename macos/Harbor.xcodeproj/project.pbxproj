@@ -1,0 +1,643 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0102679F108A030ED37123A6 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 88C24513613ECC24DB6D8704 /* SwiftTerm */; };
+		03B138E6841706FD169151EC /* SharingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C465E600B9D85E7CEA668FC6 /* SharingService.swift */; };
+		03C7CE6C2BFBF89D371E372A /* Harbor.icns in Resources */ = {isa = PBXBuildFile; fileRef = 7B549EEE8B2543E4538A0A60 /* Harbor.icns */; };
+		08FBA0CA43B118CB2C6A7EF0 /* Vault.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B594C013FB69D4F0F085D0A /* Vault.swift */; };
+		0AF7DDF8A10B6BA73F6C016E /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3A75FBFBB34BB2142B30FC /* LibraryStore.swift */; };
+		0B773313E651D6C3F29852CB /* protocol-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 35E5E8B96D1D89B385E033A0 /* protocol-vectors.json */; };
+		3088244EA92A264425B586F3 /* HTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75D1E81BE9649DEBB5F9E486 /* HTTPServer.swift */; };
+		833E90369BB55DF67BF7EC7F /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25017319AD11233A56C5754E /* main.swift */; };
+		85C7755CB77D9B19F7559BB7 /* HostEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E08844A11FFC077A294CDD /* HostEditor.swift */; };
+		979CFCBD09AB614378CB6B12 /* HarborApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29F9AAE05882F9789CEA451C /* HarborApp.swift */; };
+		A8A7257B7E4F68A86E465979 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 6697481428FA81B177EADFC9 /* SwiftTerm */; };
+		AE541DDBA1A6081461CD1807 /* SharingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E3680354B9752634F5627B3 /* SharingView.swift */; };
+		B5DD3929603A17EEA9620DA7 /* SyncCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4876EF9D5E4EA01C9CD2F9FE /* SyncCrypto.swift */; };
+		B82D68A40F96F31162CEE188 /* SSH.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F1E62FCA597E13B27EFE6DC /* SSH.swift */; };
+		D6961A5D92898431AD1F1677 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FAA9A410482C71A8CDE9465 /* Models.swift */; };
+		E347C78FD49168AD760A639F /* HarborTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 114EB50CEE8C902CF6EBE43E /* HarborTests.swift */; };
+		E6B0E64E5726C830B1AC9009 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45915EB55A024EAE2EEC3A7F /* ContentView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AE90168E5EBD7D88F1F19328 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E1A41677E0D3A3B0DE821E73 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2808BCF99DF40CC4C8E70735;
+			remoteInfo = Harbor;
+		};
+		EBF0AE58E400436D706C8821 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E1A41677E0D3A3B0DE821E73 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BD78FCAD8C36FA7FAE7514E3;
+			remoteInfo = HarborAskPass;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0B594C013FB69D4F0F085D0A /* Vault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Vault.swift; sourceTree = "<group>"; };
+		114EB50CEE8C902CF6EBE43E /* HarborTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarborTests.swift; sourceTree = "<group>"; };
+		1F1E62FCA597E13B27EFE6DC /* SSH.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSH.swift; sourceTree = "<group>"; };
+		25017319AD11233A56C5754E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		29F9AAE05882F9789CEA451C /* HarborApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarborApp.swift; sourceTree = "<group>"; };
+		35E5E8B96D1D89B385E033A0 /* protocol-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "protocol-vectors.json"; sourceTree = "<group>"; };
+		45915EB55A024EAE2EEC3A7F /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		4876EF9D5E4EA01C9CD2F9FE /* SyncCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCrypto.swift; sourceTree = "<group>"; };
+		5FAA9A410482C71A8CDE9465 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		75D1E81BE9649DEBB5F9E486 /* HTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPServer.swift; sourceTree = "<group>"; };
+		7B549EEE8B2543E4538A0A60 /* Harbor.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Harbor.icns; sourceTree = "<group>"; };
+		8D3A75FBFBB34BB2142B30FC /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryStore.swift; sourceTree = "<group>"; };
+		93E08844A11FFC077A294CDD /* HostEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostEditor.swift; sourceTree = "<group>"; };
+		9E3680354B9752634F5627B3 /* SharingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingView.swift; sourceTree = "<group>"; };
+		A4A6FC7442A8B1A9D91DAF9C /* HarborAskPass */ = {isa = PBXFileReference; includeInIndex = 0; path = HarborAskPass; sourceTree = BUILT_PRODUCTS_DIR; };
+		C465E600B9D85E7CEA668FC6 /* SharingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingService.swift; sourceTree = "<group>"; };
+		C7972E793D4F5BE6AF54E941 /* HarborTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HarborTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F4A098FA2BAEE5F46EA2760B /* Harbor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Harbor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		13FCE7083D6FA79C35195FE5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A8A7257B7E4F68A86E465979 /* SwiftTerm in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		958A1C943D2260AA687B1F8B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0102679F108A030ED37123A6 /* SwiftTerm in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		12661C58B8F1A90A146882EF /* shared */ = {
+			isa = PBXGroup;
+			children = (
+				35E5E8B96D1D89B385E033A0 /* protocol-vectors.json */,
+			);
+			name = shared;
+			path = ../shared;
+			sourceTree = "<group>";
+		};
+		4B6E6FF1AAF0F1E58A96AFE0 = {
+			isa = PBXGroup;
+			children = (
+				BF003DDB7C2B097E650D3CE9 /* Harbor */,
+				54C00A8D582F5179E04DA3F5 /* HarborAskPass */,
+				12661C58B8F1A90A146882EF /* shared */,
+				8E5E3712AAFD04C025074BEF /* Tests */,
+				CC43AAD20CAB978C29A392F1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		54C00A8D582F5179E04DA3F5 /* HarborAskPass */ = {
+			isa = PBXGroup;
+			children = (
+				25017319AD11233A56C5754E /* main.swift */,
+			);
+			path = HarborAskPass;
+			sourceTree = "<group>";
+		};
+		8E5E3712AAFD04C025074BEF /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				114EB50CEE8C902CF6EBE43E /* HarborTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		BF003DDB7C2B097E650D3CE9 /* Harbor */ = {
+			isa = PBXGroup;
+			children = (
+				45915EB55A024EAE2EEC3A7F /* ContentView.swift */,
+				7B549EEE8B2543E4538A0A60 /* Harbor.icns */,
+				29F9AAE05882F9789CEA451C /* HarborApp.swift */,
+				93E08844A11FFC077A294CDD /* HostEditor.swift */,
+				75D1E81BE9649DEBB5F9E486 /* HTTPServer.swift */,
+				8D3A75FBFBB34BB2142B30FC /* LibraryStore.swift */,
+				5FAA9A410482C71A8CDE9465 /* Models.swift */,
+				C465E600B9D85E7CEA668FC6 /* SharingService.swift */,
+				9E3680354B9752634F5627B3 /* SharingView.swift */,
+				1F1E62FCA597E13B27EFE6DC /* SSH.swift */,
+				4876EF9D5E4EA01C9CD2F9FE /* SyncCrypto.swift */,
+				0B594C013FB69D4F0F085D0A /* Vault.swift */,
+			);
+			path = Harbor;
+			sourceTree = "<group>";
+		};
+		CC43AAD20CAB978C29A392F1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F4A098FA2BAEE5F46EA2760B /* Harbor.app */,
+				A4A6FC7442A8B1A9D91DAF9C /* HarborAskPass */,
+				C7972E793D4F5BE6AF54E941 /* HarborTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2808BCF99DF40CC4C8E70735 /* Harbor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA18A3D193C4C448EF1F0ED9 /* Build configuration list for PBXNativeTarget "Harbor" */;
+			buildPhases = (
+				95C0E0518523BE9E818074B0 /* Sources */,
+				C8A0BF7D5CDC9B3299ABC59F /* Resources */,
+				13FCE7083D6FA79C35195FE5 /* Frameworks */,
+				0F0566F2EC4AE70101C496AC /* Embed credential helper */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				09EE8E8E2EBD1ADD15CD70E0 /* PBXTargetDependency */,
+			);
+			name = Harbor;
+			packageProductDependencies = (
+				6697481428FA81B177EADFC9 /* SwiftTerm */,
+			);
+			productName = Harbor;
+			productReference = F4A098FA2BAEE5F46EA2760B /* Harbor.app */;
+			productType = "com.apple.product-type.application";
+		};
+		55C0EA4DEB3080BF9407B82A /* HarborTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EDC49BC382086B2E3DD06D4E /* Build configuration list for PBXNativeTarget "HarborTests" */;
+			buildPhases = (
+				5F7782EA6387F6692F2D075C /* Sources */,
+				E49673D9D480564826DF5468 /* Resources */,
+				958A1C943D2260AA687B1F8B /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5FE692215B487EE0E4D706A4 /* PBXTargetDependency */,
+			);
+			name = HarborTests;
+			packageProductDependencies = (
+				88C24513613ECC24DB6D8704 /* SwiftTerm */,
+			);
+			productName = HarborTests;
+			productReference = C7972E793D4F5BE6AF54E941 /* HarborTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		BD78FCAD8C36FA7FAE7514E3 /* HarborAskPass */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 987DC9932674867718FB3579 /* Build configuration list for PBXNativeTarget "HarborAskPass" */;
+			buildPhases = (
+				8A9D32EA98FFAC2A44F3ECC7 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HarborAskPass;
+			productName = HarborAskPass;
+			productReference = A4A6FC7442A8B1A9D91DAF9C /* HarborAskPass */;
+			productType = "com.apple.product-type.tool";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E1A41677E0D3A3B0DE821E73 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					2808BCF99DF40CC4C8E70735 = {
+						ProvisioningStyle = Automatic;
+					};
+					55C0EA4DEB3080BF9407B82A = {
+						ProvisioningStyle = Automatic;
+					};
+					BD78FCAD8C36FA7FAE7514E3 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 228E7885A7681524FA70D6D0 /* Build configuration list for PBXProject "Harbor" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 4B6E6FF1AAF0F1E58A96AFE0;
+			packageReferences = (
+				0D2262475DF45336A4B12671 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+			);
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				2808BCF99DF40CC4C8E70735 /* Harbor */,
+				BD78FCAD8C36FA7FAE7514E3 /* HarborAskPass */,
+				55C0EA4DEB3080BF9407B82A /* HarborTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C8A0BF7D5CDC9B3299ABC59F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				03C7CE6C2BFBF89D371E372A /* Harbor.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E49673D9D480564826DF5468 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0B773313E651D6C3F29852CB /* protocol-vectors.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		0F0566F2EC4AE70101C496AC /* Embed credential helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/HarborAskPass",
+			);
+			name = "Embed credential helper";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/HarborAskPass",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "mkdir -p \"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers\"\ncp \"$BUILT_PRODUCTS_DIR/HarborAskPass\" \"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers/HarborAskPass\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		5F7782EA6387F6692F2D075C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E347C78FD49168AD760A639F /* HarborTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8A9D32EA98FFAC2A44F3ECC7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				833E90369BB55DF67BF7EC7F /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		95C0E0518523BE9E818074B0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E6B0E64E5726C830B1AC9009 /* ContentView.swift in Sources */,
+				3088244EA92A264425B586F3 /* HTTPServer.swift in Sources */,
+				979CFCBD09AB614378CB6B12 /* HarborApp.swift in Sources */,
+				85C7755CB77D9B19F7559BB7 /* HostEditor.swift in Sources */,
+				0AF7DDF8A10B6BA73F6C016E /* LibraryStore.swift in Sources */,
+				D6961A5D92898431AD1F1677 /* Models.swift in Sources */,
+				B82D68A40F96F31162CEE188 /* SSH.swift in Sources */,
+				03B138E6841706FD169151EC /* SharingService.swift in Sources */,
+				AE541DDBA1A6081461CD1807 /* SharingView.swift in Sources */,
+				B5DD3929603A17EEA9620DA7 /* SyncCrypto.swift in Sources */,
+				08FBA0CA43B118CB2C6A7EF0 /* Vault.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		09EE8E8E2EBD1ADD15CD70E0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BD78FCAD8C36FA7FAE7514E3 /* HarborAskPass */;
+			targetProxy = EBF0AE58E400436D706C8821 /* PBXContainerItemProxy */;
+		};
+		5FE692215B487EE0E4D706A4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2808BCF99DF40CC4C8E70735 /* Harbor */;
+			targetProxy = AE90168E5EBD7D88F1F19328 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		3012FBAAF503F3FC0CBC8735 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		3A54A33EE479549F97DA2E77 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.harbor.askpass;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		3E3B329C7B496D999047FCE4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		53BB3C8A0477800495AC2AE9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.harbor.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Harbor.app/Contents/MacOS/Harbor";
+			};
+			name = Release;
+		};
+		677653C3AD255A2133EB3608 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Harbor;
+				INFOPLIST_KEY_CFBundleIconFile = Harbor.icns;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHighResolutionCapable = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Harbor syncs your host library with paired Android devices on your local network.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.harbor.desktop;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		68565DD2159B592C6B5A6D72 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.harbor.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Harbor.app/Contents/MacOS/Harbor";
+			};
+			name = Debug;
+		};
+		7644A136E8F80A2CF02044B1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.harbor.askpass;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		D62A08C885ACC569AA2ADEE0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Harbor;
+				INFOPLIST_KEY_CFBundleIconFile = Harbor.icns;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHighResolutionCapable = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Harbor syncs your host library with paired Android devices on your local network.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.harbor.desktop;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		228E7885A7681524FA70D6D0 /* Build configuration list for PBXProject "Harbor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3012FBAAF503F3FC0CBC8735 /* Debug */,
+				3E3B329C7B496D999047FCE4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		987DC9932674867718FB3579 /* Build configuration list for PBXNativeTarget "HarborAskPass" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3A54A33EE479549F97DA2E77 /* Debug */,
+				7644A136E8F80A2CF02044B1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		AA18A3D193C4C448EF1F0ED9 /* Build configuration list for PBXNativeTarget "Harbor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D62A08C885ACC569AA2ADEE0 /* Debug */,
+				677653C3AD255A2133EB3608 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EDC49BC382086B2E3DD06D4E /* Build configuration list for PBXNativeTarget "HarborTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				68565DD2159B592C6B5A6D72 /* Debug */,
+				53BB3C8A0477800495AC2AE9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		0D2262475DF45336A4B12671 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.20.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		6697481428FA81B177EADFC9 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0D2262475DF45336A4B12671 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+		88C24513613ECC24DB6D8704 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0D2262475DF45336A4B12671 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = E1A41677E0D3A3B0DE821E73 /* Project object */;
+}
