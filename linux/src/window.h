@@ -19,11 +19,15 @@ private:
     QTabWidget *tabs_;
     QLabel *title_;
     QLabel *details_;
+    QLabel *endpoint_;
+    QLabel *fingerprint_;
     QLabel *status_;
     QPushButton *connect_;
     QPushButton *edit_;
     QPushButton *remove_;
-    QPushButton *sharing_;
+    QPushButton *add_;
+    QPushButton *emptyAdd_;
+    QPushButton *clearSearch_;
     QString selected_;
     QJsonObject selectedHost() const;
     void refresh();

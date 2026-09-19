@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:xterm/xterm.dart';
 
 import '../ssh_session.dart';
-import '../main.dart' show surface;
+import '../ui.dart';
 
 class TerminalScreen extends StatefulWidget {
   const TerminalScreen({
@@ -22,6 +22,7 @@ class TerminalScreen extends StatefulWidget {
 class _TerminalScreenState extends State<TerminalScreen> {
   final focus = FocusNode();
   final controller = TerminalController();
+
   @override
   void initState() {
     super.initState();
@@ -43,23 +44,37 @@ class _TerminalScreenState extends State<TerminalScreen> {
     super.dispose();
   }
 
+  Widget keyButton(
+    String label,
+    VoidCallback action, {
+    bool selected = false,
+  }) => Padding(
+    padding: const EdgeInsets.only(right: 6),
+    child: TextButton(
+      onPressed: action,
+      style: TextButton.styleFrom(
+        minimumSize: const Size(48, 44),
+        foregroundColor: selected ? canvas : ink,
+        backgroundColor: selected ? actionColor : raised,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      ),
+    ),
+  );
+
+  Color get actionColor => action;
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xff090f1b),
+    backgroundColor: const Color(0xff101217),
     appBar: AppBar(
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            widget.connection.host.name,
-            style: const TextStyle(fontSize: 17),
-          ),
-          Text(
-            widget.connection.status,
-            maxLines: 2,
-            style: const TextStyle(fontSize: 11, color: Color(0xffa1b1cb)),
-          ),
-        ],
+      title: Text(
+        widget.connection.host.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
       actions: [
         IconButton(
@@ -74,7 +89,12 @@ class _TerminalScreenState extends State<TerminalScreen> {
               );
             }
           },
-          icon: const Icon(Icons.copy, size: 20),
+          icon: const Icon(Icons.copy_outlined, size: 21),
+        ),
+        IconButton(
+          tooltip: 'Back to sessions',
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.view_list_outlined, size: 23),
         ),
         IconButton(
           tooltip: 'Close session',
@@ -82,13 +102,48 @@ class _TerminalScreenState extends State<TerminalScreen> {
             widget.onClose();
             Navigator.pop(context);
           },
-          icon: const Icon(Icons.close),
+          icon: const Icon(Icons.close, size: 22),
         ),
       ],
     ),
     body: SafeArea(
       child: Column(
         children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
+            color: panel,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 5),
+                  child: Icon(
+                    widget.connection.status == 'Connected'
+                        ? Icons.circle
+                        : Icons.circle_outlined,
+                    size: 10,
+                    color: widget.connection.status == 'Connected'
+                        ? const Color(0xff8fd7b6)
+                        : muted,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${widget.connection.host.username}@${widget.connection.host.address}:${widget.connection.host.port}  ·  ${widget.connection.status}',
+                    style: const TextStyle(
+                      color: muted,
+                      fontSize: 14,
+                      height: 1.35,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
           Expanded(
             child: TerminalView(
               widget.connection.terminal,
@@ -99,40 +154,43 @@ class _TerminalScreenState extends State<TerminalScreen> {
               textStyle: const TerminalStyle(fontSize: 13),
             ),
           ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          Container(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+            decoration: const BoxDecoration(
+              color: panel,
+              border: Border(top: BorderSide(color: hairline)),
+            ),
             child: Row(
               children: [
-                TextButton(
-                  onPressed: () => widget.connection.send('\x1b'),
-                  child: const Text('Esc'),
-                ),
-                TextButton(
-                  onPressed: () => setState(
-                    () => widget.connection.controlNext =
-                        !widget.connection.controlNext,
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        keyButton('Esc', () => widget.connection.send('\x1b')),
+                        keyButton(
+                          'Ctrl',
+                          () => setState(
+                            () => widget.connection.controlNext =
+                                !widget.connection.controlNext,
+                          ),
+                          selected: widget.connection.controlNext,
+                        ),
+                        keyButton('Tab', () => widget.connection.send('\t')),
+                        for (final entry in {
+                          '↑': '\x1b[A',
+                          '↓': '\x1b[B',
+                          '←': '\x1b[D',
+                          '→': '\x1b[C',
+                        }.entries)
+                          keyButton(
+                            entry.key,
+                            () => widget.connection.send(entry.value),
+                          ),
+                      ],
+                    ),
                   ),
-                  style: TextButton.styleFrom(
-                    backgroundColor: widget.connection.controlNext
-                        ? surface
-                        : null,
-                  ),
-                  child: const Text('Ctrl'),
                 ),
-                TextButton(
-                  onPressed: () => widget.connection.send('\t'),
-                  child: const Text('Tab'),
-                ),
-                for (final entry in {
-                  '↑': '\x1b[A',
-                  '↓': '\x1b[B',
-                  '←': '\x1b[D',
-                  '→': '\x1b[C',
-                }.entries)
-                  TextButton(
-                    onPressed: () => widget.connection.send(entry.value),
-                    child: Text(entry.key),
-                  ),
                 IconButton(
                   tooltip: 'Show keyboard',
                   onPressed: () => focus.requestFocus(),

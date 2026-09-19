@@ -1,5 +1,9 @@
 # Harbor progress
 
+## Version 1.1: interface redesign
+
+The user rejected the first version's visual quality, first-host form and address-driven pairing flow. Version 1.1.0 redesigns all three platforms with simpler host forms, automatic network selection and QR-first pairing. The researched brief is in [UI-REDESIGN.md](UI-REDESIGN.md); the reviewed screenshots and runtime evidence are described in [UI-VALIDATION.md](UI-VALIDATION.md). Root handled research and visual/integration review; the existing Sol high agents wrote the platform implementations. Prior functional validation below describes version 1.0.0. Updated binaries and screenshots use `1.1` filenames in `artifacts/`. On the supplied Mac, `Harbor-1.1.app` is staged beside the original app; quit the old copy before opening the update. Existing vaults are retained.
+
 ## Objective
 
 Build Swift macOS, Qt Linux and Flutter Android SSH managers. Desktop authority, encrypted read-only Android sync, actual terminals, dark mode. User asleep; resolve routine choices autonomously. No implementation comments, minimal modular code. All implementation by GPT-5.6 Sol high agents.

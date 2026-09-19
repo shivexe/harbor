@@ -1,5 +1,6 @@
 #include "vault.h"
 #include "sync.h"
+#include "pairing_network.h"
 #include <QCoreApplication>
 #include <QTemporaryDir>
 #include <QFile>
@@ -44,6 +45,17 @@ int main(int argc, char **argv) {
         EVP_MD_CTX_free(context);
         EVP_PKEY_free(verificationKey);
         QTemporaryDir directory;
+        check(pairingNetworkPriority("wlo1", QNetworkInterface::Wifi, QHostAddress("192.168.10.5")) < pairingNetworkPriority("en0", QNetworkInterface::Ethernet, QHostAddress("10.0.0.5")));
+        check(pairingNetworkPriority("en0", QNetworkInterface::Ethernet, QHostAddress("10.0.0.5")) < pairingNetworkPriority("tailscale0", QNetworkInterface::Virtual, QHostAddress("100.64.0.1")));
+        check(pairingNetworkPriority("tailscale0", QNetworkInterface::Virtual, QHostAddress("100.127.255.254")) >= 0);
+        check(pairingNetworkPriority("tailscale0", QNetworkInterface::Virtual, QHostAddress("100.63.255.254")) < 0);
+        check(pairingNetworkPriority("tailscale0", QNetworkInterface::Virtual, QHostAddress("100.128.0.1")) < 0);
+        check(pairingNetworkPriority("docker0", QNetworkInterface::Ethernet, QHostAddress("10.0.0.1")) < 0);
+        check(pairingNetworkPriority("br-1234", QNetworkInterface::Ethernet, QHostAddress("10.0.1.1")) < 0);
+        check(pairingNetworkPriority("wlo1", QNetworkInterface::Wifi, QHostAddress("8.8.8.8")) < 0);
+        check(pairingNetworkPriority("wlo1", QNetworkInterface::Wifi, QHostAddress("127.0.0.1")) < 0);
+        check(pairingNetworkPriority("tailscale0", QNetworkInterface::Virtual, QHostAddress("fd7a:115c::1")) >= 0);
+        check(pairingNetworkPriority("tailscale0", QNetworkInterface::Virtual, QHostAddress("fe80::1")) < 0);
         Vault vault(directory.path() + "/vault.json");
         vault.unlock("correct horse harbor battery");
         {

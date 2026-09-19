@@ -10,6 +10,7 @@ QByteArray seal(const QByteArray &plain, const QByteArray &key, const QByteArray
 QByteArray unseal(const QByteArray &box, const QByteArray &key, const QByteArray &aad = {});
 void wipe(QByteArray &value);
 QString validateHost(const QJsonObject &host);
+QString validateHostEndpoint(const QString &hostname, int port);
 
 class Vault : public QObject {
     Q_OBJECT

@@ -41,6 +41,30 @@ struct PendingPair: Identifiable {
     let code: String
 }
 
+struct PairingNetwork: Identifiable, Equatable {
+    let address: String
+    let name: String
+    let interface: String
+    let priority: Int
+    var id: String { address }
+
+    @MainActor static func candidate(interface: String, address: String) -> PairingNetwork? {
+        guard SharingService.isPrivateAddress(address),
+              !address.hasPrefix("127."), address != "::1", !address.hasPrefix("169.254."),
+              !address.lowercased().hasPrefix("fe80:"),
+              !["lo", "awdl", "llw", "p2p", "bridge", "vmnet", "docker", "vbox", "tap", "veth"].contains(where: interface.hasPrefix) else { return nil }
+        let ipv6 = address.contains(":")
+        let vpn = interface.hasPrefix("utun") || interface.hasPrefix("tun") || interface.hasPrefix("tailscale") || interface.hasPrefix("wg") || address.hasPrefix("100.")
+        if interface.hasPrefix("en") && !vpn {
+            return PairingNetwork(address: address, name: "Local network (\(interface))", interface: interface, priority: ipv6 ? 2 : 0)
+        }
+        if vpn {
+            return PairingNetwork(address: address, name: "Private VPN (\(interface))", interface: interface, priority: ipv6 ? 3 : 1)
+        }
+        return PairingNetwork(address: address, name: "Other network (\(interface))", interface: interface, priority: ipv6 ? 5 : 4)
+    }
+}
+
 struct ApprovedPairReply {
     let secret: Data
     let deviceID: String
@@ -75,8 +99,11 @@ final class SharingService: ObservableObject {
     @Published private(set) var enabled = false
     @Published private(set) var invitation: Invitation?
     @Published private(set) var pending: PendingPair?
-    @Published var address = SharingService.localAddress()
+    @Published var address = ""
     @Published var port = "45873"
+    @Published private(set) var networks: [PairingNetwork] = []
+    @Published private(set) var invitationExpired = false
+    @Published private(set) var preparing = false
     @Published var error: String?
     @Published private(set) var pairingResult: String?
     private let store: LibraryStore
@@ -98,14 +125,72 @@ final class SharingService: ObservableObject {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
+    func discoverNetworks() {
+        var interfaces: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaces) == 0 else { networks = []; return }
+        defer { freeifaddrs(interfaces) }
+        var found: [PairingNetwork] = []
+        var current = interfaces
+        while let item = current {
+            defer { current = item.pointee.ifa_next }
+            guard let socket = item.pointee.ifa_addr,
+                  item.pointee.ifa_flags & UInt32(IFF_UP) != 0,
+                  item.pointee.ifa_flags & UInt32(IFF_LOOPBACK) == 0,
+                  socket.pointee.sa_family == UInt8(AF_INET) || socket.pointee.sa_family == UInt8(AF_INET6) else { continue }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            guard getnameinfo(socket, socklen_t(socket.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0,
+                  let network = PairingNetwork.candidate(interface: String(cString: item.pointee.ifa_name), address: String(cString: host)),
+                  !found.contains(where: { $0.address == network.address }) else { continue }
+            found.append(network)
+        }
+        networks = found.sorted {
+            if $0.priority != $1.priority { return $0.priority < $1.priority }
+            if $0.interface != $1.interface { return $0.interface < $1.interface }
+            return $0.address < $1.address
+        }
+    }
+
+    func inviteAutomatically() {
+        preparing = true
+        error = nil
+        discoverNetworks()
+        guard let network = networks.first(where: { $0.address == address }) ?? networks.first else {
+            preparing = false
+            cancelInvitation()
+            error = "No reachable local network found. Connect this Mac to Wi-Fi, Ethernet or a private VPN, then retry."
+            return
+        }
+        address = network.address
+        invite()
+        preparing = false
+    }
+
+    func selectNetwork(_ value: String) {
+        guard networks.contains(where: { $0.address == value }), pending == nil, address != value else { return }
+        address = value
+        if invitation != nil { invite() }
+    }
+
+    func enableSync() {
+        error = nil
+        discoverNetworks()
+        guard let network = networks.first(where: { $0.address == address }) ?? networks.first else {
+            error = "No reachable local network found. Connect this Mac to Wi-Fi, Ethernet or a private VPN, then retry."
+            return
+        }
+        address = network.address
+        start()
+    }
+
     func start() {
         do {
-            guard store.loaded, let port = UInt16(port), port > 0, Self.isPrivateAddress(address) else { throw HarborError.message("Enter a local IP address and a port from 1 to 65535.") }
+            guard store.loaded, let port = UInt16(port), port > 0, Self.isPrivateAddress(address) else { throw HarborError.message("Choose a local network to start sharing.") }
             let server = HTTPServer { [weak self] request in self?.handle(request) ?? HTTPResponse(503) }
             server.failed = { [weak self] error in self?.stop(); self?.error = "Sharing could not start: \(error)" }
             try server.start(port: port)
             self.server = server
             enabled = true
+            error = nil
         } catch { self.error = error.localizedDescription }
     }
 
@@ -118,6 +203,7 @@ final class SharingService: ObservableObject {
         approvedExpiry = nil
         approvedReplies.removeAll()
         attempts.removeAll()
+        invitationExpired = false
     }
 
     func invite() {
@@ -135,7 +221,9 @@ final class SharingService: ObservableObject {
                                         expiresAt: Int64(Date().timeIntervalSince1970) + 300,
                                         desktopName: Foundation.Host.current().localizedName ?? "Harbor on Mac")
             self.invitation = invitation
-            let expiry = DispatchWorkItem { [weak self] in self?.cancelInvitation() }
+            invitationExpired = false
+            error = nil
+            let expiry = DispatchWorkItem { [weak self] in self?.expireInvitation() }
             self.expiry = expiry
             DispatchQueue.main.asyncAfter(deadline: .now() + 300, execute: expiry)
         } catch { self.error = error.localizedDescription }
@@ -149,6 +237,13 @@ final class SharingService: ObservableObject {
         approved = nil
         denied = false
         pairingResult = nil
+        invitationExpired = false
+    }
+
+    private func expireInvitation() {
+        let completed = approved != nil
+        cancelInvitation()
+        invitationExpired = !completed
     }
 
     func approve() {
@@ -277,20 +372,4 @@ final class SharingService: ObservableObject {
         return false
     }
 
-    static func localAddress() -> String {
-        var interfaces: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&interfaces) == 0 else { return "127.0.0.1" }
-        defer { freeifaddrs(interfaces) }
-        var current = interfaces
-        while let interface = current {
-            defer { current = interface.pointee.ifa_next }
-            guard let address = interface.pointee.ifa_addr, address.pointee.sa_family == UInt8(AF_INET), interface.pointee.ifa_flags & UInt32(IFF_UP) != 0 else { continue }
-            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            if getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
-                let value = String(cString: host)
-                if value != "127.0.0.1", isPrivateAddress(value) { return value }
-            }
-        }
-        return "127.0.0.1"
-    }
 }

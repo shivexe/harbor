@@ -1,5 +1,7 @@
 # Executed verification
 
+This document records version 1.0 validation. For the subsequent QR-first interface redesign and version 1.1 build/runtime checks, see [UI-VALIDATION.md](UI-VALIDATION.md).
+
 Validation performed on Ubuntu 26.04 amd64, an Android API 30 emulator, and the user's Apple silicon Mac with Xcode 27. Disposable servers and credentials were used. These checks establish tested behavior; they do not constitute an external security audit or app-store certification.
 
 ## Linux

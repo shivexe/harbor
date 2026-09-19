@@ -3,6 +3,7 @@ import Foundation
 import AppKit
 import Darwin
 import SwiftTerm
+import SwiftUI
 import XCTest
 @testable import Harbor
 
@@ -69,6 +70,66 @@ final class HarborTests: XCTestCase {
     }
 
     #if DEBUG
+    @MainActor
+    func testRedesignedScreenshots() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        guard FileManager.default.fileExists(atPath: workspace.appendingPathComponent(".work/ui-capture-enabled").path) else { throw XCTSkip("Visual fixture capture is opt-in.") }
+        let directory = workspace.appendingPathComponent(".work/ui-vault-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = try Vault(directory: directory, key: SymmetricKey(size: .bits256))
+        var library = Library()
+        library.signingKey = Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString()
+        try vault.save(library)
+        let store = LibraryStore(testVault: vault, library: library)
+        let sharing = SharingService(store: store)
+        store.onLock = { [weak sharing] in sharing?.stop() }
+        defer { store.lock() }
+
+        let main = NSWindow(contentRect: NSRect(x: 50, y: 50, width: 1000, height: 700), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        main.isReleasedWhenClosed = false
+        main.contentView = NSHostingView(rootView: ContentView(store: store, sharing: sharing).preferredColorScheme(.dark))
+        main.makeKeyAndOrderFront(nil)
+        defer { main.close() }
+        try await Task.sleep(nanoseconds: 350_000_000)
+        try capture(main, to: workspace.appendingPathComponent(".work/mac-1.1-empty.png"))
+
+        let editor = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 560, height: 650), styleMask: [.titled], backing: .buffered, defer: false)
+        editor.isReleasedWhenClosed = false
+        editor.contentView = NSHostingView(rootView: HostEditor(host: Host(), store: store).preferredColorScheme(.dark))
+        editor.makeKeyAndOrderFront(nil)
+        defer { editor.close() }
+        try await Task.sleep(nanoseconds: 350_000_000)
+        try capture(editor, to: workspace.appendingPathComponent(".work/mac-1.1-editor.png"))
+        editor.orderOut(nil)
+
+        let host = Host(name: "Web server", address: "192.168.1.42", username: "deploy", secret: "fixture-password")
+        try store.save(host)
+        main.makeKeyAndOrderFront(nil)
+        try await Task.sleep(nanoseconds: 350_000_000)
+        try capture(main, to: workspace.appendingPathComponent(".work/mac-1.1-host.png"))
+
+        let pair = NSWindow(contentRect: NSRect(x: 90, y: 90, width: 720, height: 650), styleMask: [.titled], backing: .buffered, defer: false)
+        pair.isReleasedWhenClosed = false
+        pair.contentView = NSHostingView(rootView: SharingView(store: store, sharing: sharing).preferredColorScheme(.dark))
+        pair.makeKeyAndOrderFront(nil)
+        defer { pair.close() }
+        sharing.port = String(Int.random(in: 30000...60000))
+        sharing.inviteAutomatically()
+        XCTAssertNotNil(sharing.invitation, sharing.error ?? "No invitation")
+        try await Task.sleep(nanoseconds: 350_000_000)
+        try capture(pair, to: workspace.appendingPathComponent(".work/mac-1.1-pairing.png"))
+    }
+
+    @MainActor
+    private func capture(_ window: NSWindow, to url: URL) throws {
+        guard let view = window.contentView else { throw HarborError.message("No view to capture.") }
+        view.displayIfNeeded()
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw HarborError.message("Could not render the test window.") }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { throw HarborError.message("Could not encode the screenshot.") }
+        try png.write(to: url, options: .atomic)
+    }
+
     @MainActor
     func testLoopbackPairingRetrySyncDeletionAndRevocation() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -403,5 +464,34 @@ final class HarborTests: XCTestCase {
         XCTAssertFalse(SharingService.isPrivateAddress("100.128.0.0"))
         XCTAssertFalse(SharingService.isPrivateAddress("172.32.0.1"))
         XCTAssertFalse(SharingService.isPrivateAddress("desktop.local"))
+    }
+
+    @MainActor
+    func testAutomaticPairingNetworkChoicesAvoidLoopbackAndBridges() {
+        XCTAssertNil(PairingNetwork.candidate(interface: "lo0", address: "127.0.0.1"))
+        XCTAssertNil(PairingNetwork.candidate(interface: "bridge100", address: "192.168.64.1"))
+        XCTAssertNil(PairingNetwork.candidate(interface: "awdl0", address: "169.254.1.2"))
+        XCTAssertNil(PairingNetwork.candidate(interface: "en0", address: "8.8.8.8"))
+        XCTAssertNil(PairingNetwork.candidate(interface: "en0", address: "fe80::1"))
+        XCTAssertEqual(PairingNetwork.candidate(interface: "en0", address: "192.168.1.5")?.priority, 0)
+        XCTAssertEqual(PairingNetwork.candidate(interface: "utun4", address: "100.64.207.29")?.priority, 1)
+        XCTAssertEqual(PairingNetwork.candidate(interface: "en0", address: "fd00::5")?.priority, 2)
+        XCTAssertEqual(PairingNetwork.candidate(interface: "utun4", address: "100.64.207.29")?.name, "Private VPN (utun4)")
+    }
+
+    @MainActor
+    func testHostEditorDefaultsNameOnlyAtSaveAndPreservesKeyDraft() throws {
+        var host = Host(address: "example.com", username: "deploy")
+        XCTAssertEqual(host.name, "")
+        let saved = try HostEditor.preparedHost(host, portText: "22", password: "fixture-secret", passphrase: "")
+        XCTAssertEqual(saved.name, "example.com")
+        XCTAssertEqual(saved.secret, "fixture-secret")
+        host.auth = .key
+        host.privateKey = "-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----"
+        let key = try HostEditor.preparedHost(host, portText: "2222", password: "unused", passphrase: "fixture-passphrase")
+        XCTAssertEqual(key.privateKey, host.privateKey)
+        XCTAssertEqual(key.secret, "fixture-passphrase")
+        XCTAssertEqual(key.port, 2222)
+        XCTAssertThrowsError(try HostEditor.preparedHost(host, portText: "0", password: "", passphrase: ""))
     }
 }

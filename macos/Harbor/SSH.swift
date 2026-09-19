@@ -102,8 +102,8 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
             terminal.processDelegate = self
             terminal.terminalDelegate = bridge
             terminal.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-            terminal.nativeBackgroundColor = NSColor(srgbRed: 0.035, green: 0.055, blue: 0.087, alpha: 1)
-            terminal.nativeForegroundColor = NSColor(srgbRed: 0.85, green: 0.89, blue: 0.94, alpha: 1)
+            terminal.nativeBackgroundColor = NSColor(srgbRed: 23.0 / 255, green: 25.0 / 255, blue: 31.0 / 255, alpha: 1)
+            terminal.nativeForegroundColor = NSColor(srgbRed: 241.0 / 255, green: 242.0 / 255, blue: 246.0 / 255, alpha: 1)
             terminal.startProcess(executable: "/usr/bin/ssh", args: arguments, environment: environment.map { "\($0.key)=\($0.value)" })
             guard terminal.process.running else { throw HarborError.message("OpenSSH could not start. Close unused sessions and try again.") }
             status = "Session open"

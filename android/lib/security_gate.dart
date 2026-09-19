@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'ui.dart';
+
 final unlocked = ValueNotifier(false);
 VoidCallback? onInteraction;
 void noteInteraction() => onInteraction?.call();
@@ -97,45 +99,89 @@ class _SecurityGateState extends State<SecurityGate>
             ),
           )
         : Material(
-            color: const Color(0xff0b1424),
+            color: canvas,
             child: SafeArea(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.sailing_outlined,
-                        size: 64,
-                        color: Color(0xff91afff),
-                      ),
-                      const SizedBox(height: 24),
-                      const Text(
-                        'Harbor is locked',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.terminal, color: action, size: 26),
+                        SizedBox(width: 10),
+                        Text(
+                          'Harbor',
+                          style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 60,
+                              height: 60,
+                              decoration: BoxDecoration(
+                                color: panel,
+                                border: Border.all(color: hairline),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const Icon(
+                                Icons.lock_outline,
+                                color: action,
+                                size: 29,
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+                            const Text(
+                              'Your workspace is locked.',
+                              style: TextStyle(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -.7,
+                                height: 1.15,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Use your device screen lock to access your hosts and sessions.',
+                              style: TextStyle(
+                                color: muted,
+                                fontSize: 16,
+                                height: 1.4,
+                              ),
+                            ),
+                            if (error != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 20),
+                                child: Text(
+                                  error!,
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.error,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Your device screen lock protects your hosts.',
-                        textAlign: TextAlign.center,
-                      ),
-                      if (error != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 16),
-                          child: Text(error!, textAlign: TextAlign.center),
-                        ),
-                      const SizedBox(height: 24),
-                      FilledButton.icon(
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
                         onPressed: authenticating ? null : unlock,
                         icon: const Icon(Icons.lock_open),
                         label: const Text('Unlock Harbor'),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),

@@ -9,15 +9,12 @@ import 'ssh_session.dart';
 import 'vault.dart';
 import 'sync.dart';
 import 'security_gate.dart';
+import 'ui.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const HarborApp());
 }
-
-const navy = Color(0xff0b1424);
-const surface = Color(0xff142138);
-const accent = Color(0xff91afff);
 
 class HarborApp extends StatelessWidget {
   const HarborApp({super.key});
@@ -27,29 +24,7 @@ class HarborApp extends StatelessWidget {
     builder: (_, child) => SecurityGate(child: child!),
     title: 'Harbor',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      useMaterial3: true,
-      fontFamily: 'Roboto',
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: navy,
-      colorScheme: const ColorScheme.dark(
-        primary: accent,
-        surface: surface,
-        onSurface: Color(0xffedf2ff),
-      ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: navy,
-        scrolledUnderElevation: 0,
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: surface,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
-        ),
-      ),
-    ),
+    theme: harborTheme(),
     home: const HostsScreen(),
   );
 }
@@ -68,8 +43,6 @@ class _HostsScreenState extends State<HostsScreen> {
   String? desktop;
   DateTime? lastSync;
   String? error;
-  String? comparison;
-  bool pairingCancelled = false;
   bool busy = true;
   @override
   void initState() {
@@ -86,7 +59,6 @@ class _HostsScreenState extends State<HostsScreen> {
     if (unlocked.value) {
       unawaited(load());
     } else {
-      pairingCancelled = true;
       for (final session in sessions) {
         session.dispose();
       }
@@ -96,7 +68,6 @@ class _HostsScreenState extends State<HostsScreen> {
           hosts = [];
           desktop = null;
           lastSync = null;
-          comparison = null;
         });
       }
     }
@@ -153,47 +124,21 @@ class _HostsScreenState extends State<HostsScreen> {
   Future<void> pair() async {
     if (busy) return;
     setState(() => busy = true);
-    final code = await Navigator.of(
-      context,
-    ).push<String>(MaterialPageRoute(builder: (_) => const PairScreen()));
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => PairScreen(
+          onPaired: () {
+            if (!mounted) return;
+            for (final session in sessions) {
+              session.dispose();
+            }
+            setState(sessions.clear);
+          },
+        ),
+      ),
+    );
     if (!mounted) return;
-    if (code == null) {
-      setState(() => busy = false);
-      return;
-    }
-    setState(() {
-      busy = true;
-      error = null;
-    });
-    pairingCancelled = false;
-    try {
-      await SyncService(vault).pair(code, (value, name) {
-        if (mounted) setState(() => comparison = value);
-      }, cancelled: () => pairingCancelled || !mounted);
-      if (mounted) {
-        setState(() {
-          comparison = null;
-          for (final session in sessions) {
-            session.dispose();
-          }
-          sessions.clear();
-        });
-      }
-      await SyncService(
-        vault,
-      ).sync(cancelled: () => pairingCancelled || !mounted || !unlocked.value);
-      await load();
-    } catch (_) {
-      await load();
-      if (mounted) {
-        setState(() {
-          error =
-              'Pairing or initial sync failed. Generate a fresh code on your desktop and try again.';
-          busy = false;
-          comparison = null;
-        });
-      }
-    }
+    await load();
   }
 
   void open(Host host) {
@@ -215,6 +160,7 @@ class _HostsScreenState extends State<HostsScreen> {
       ),
     );
     if (connection.closed) connection.dispose();
+    if (mounted) setState(() {});
   }
 
   Future<void> forget() async {
@@ -260,11 +206,304 @@ class _HostsScreenState extends State<HostsScreen> {
   @override
   void dispose() {
     unlocked.removeListener(lockChanged);
+    search.dispose();
     for (final session in sessions) {
       session.dispose();
     }
     super.dispose();
   }
+
+  String get syncLabel {
+    if (lastSync == null) return 'Not synced yet';
+    final elapsed = DateTime.now().difference(lastSync!.toLocal());
+    if (elapsed.inMinutes < 1) return 'Synced just now';
+    if (elapsed.inHours < 1) return 'Synced ${elapsed.inMinutes}m ago';
+    if (elapsed.inDays < 1) return 'Synced ${elapsed.inHours}h ago';
+    return 'Synced ${lastSync!.toLocal().year}-${lastSync!.toLocal().month.toString().padLeft(2, '0')}-${lastSync!.toLocal().day.toString().padLeft(2, '0')}';
+  }
+
+  Widget issueBanner() => Container(
+    margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: panel,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(
+        color: Theme.of(context).colorScheme.error.withValues(alpha: .5),
+      ),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            error!,
+            style: const TextStyle(fontSize: 14, height: 1.4),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget onboarding() => SingleChildScrollView(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(24, 52, 24, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: panel,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: hairline),
+            ),
+            child: const Icon(Icons.qr_code_2, color: action, size: 34),
+          ),
+          const SizedBox(height: 32),
+          const Text(
+            'Your hosts,\nwithin reach.',
+            style: TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -1,
+              height: 1.13,
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Scan the QR code in Harbor on your desktop to bring your host collection here.',
+            style: TextStyle(color: muted, fontSize: 16, height: 1.45),
+          ),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: busy ? null : pair,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Scan QR code'),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'On your desktop, open Devices and choose Pair Android.',
+            style: TextStyle(color: muted, fontSize: 14, height: 1.4),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget sessionsPanel() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 10),
+        child: Row(
+          children: [
+            const Text(
+              'Sessions',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '${sessions.length}',
+              style: const TextStyle(color: muted, fontSize: 14),
+            ),
+          ],
+        ),
+      ),
+      SizedBox(
+        height: 78,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          itemCount: sessions.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (context, index) {
+            final session = sessions[index];
+            return Material(
+              color: raised,
+              borderRadius: BorderRadius.circular(9),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(9),
+                onTap: () => unawaited(terminal(session)),
+                child: SizedBox(
+                  width: 180,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          session.host.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          session.status,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13, color: muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+      const Divider(height: 24, color: hairline),
+    ],
+  );
+
+  Widget hostList(List<Host> filtered) {
+    if (filtered.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                hosts.isEmpty ? Icons.dns_outlined : Icons.search_off,
+                size: 42,
+                color: muted,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                hosts.isEmpty
+                    ? 'No hosts on this device yet'
+                    : 'No matching hosts',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                hosts.isEmpty
+                    ? 'Add hosts on your desktop, then sync here.'
+                    : 'Try a different name, group, or address.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: muted, fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              if (hosts.isEmpty)
+                TextButton(
+                  onPressed: busy ? null : sync,
+                  child: const Text('Sync now'),
+                )
+              else
+                TextButton(
+                  onPressed: () {
+                    search.clear();
+                    setState(() => query = '');
+                  },
+                  child: const Text('Clear search'),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: sync,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
+        itemCount: filtered.length,
+        itemBuilder: (context, index) {
+          final host = filtered[index];
+          final showGroup =
+              index == 0 || filtered[index - 1].group != host.group;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (showGroup)
+                Padding(
+                  padding: EdgeInsets.only(
+                    top: index == 0 ? 16 : 26,
+                    bottom: 8,
+                  ),
+                  child: Text(
+                    host.group.isEmpty ? 'Ungrouped' : host.group,
+                    style: const TextStyle(
+                      color: muted,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              Material(
+                color: panel,
+                child: InkWell(
+                  onTap: () => open(host),
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 72),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: hairline, width: .5),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.dns_outlined, size: 21, color: action),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                host.name,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${host.username}@${host.address}:${host.port}',
+                                style: const TextStyle(
+                                  color: muted,
+                                  fontSize: 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.chevron_right, color: muted, size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  final search = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -285,11 +524,11 @@ class _HostsScreenState extends State<HostsScreen> {
       appBar: AppBar(
         title: const Row(
           children: [
-            Icon(Icons.sailing_outlined, color: accent),
+            Icon(Icons.terminal, color: action, size: 25),
             SizedBox(width: 10),
             Text(
               'Harbor',
-              style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: -.5),
+              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
             ),
           ],
         ),
@@ -302,6 +541,7 @@ class _HostsScreenState extends State<HostsScreen> {
             ),
           PopupMenuButton<String>(
             enabled: !busy,
+            tooltip: 'More options',
             onSelected: (value) {
               if (value == 'pair') {
                 pair();
@@ -310,11 +550,14 @@ class _HostsScreenState extends State<HostsScreen> {
               }
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'pair', child: Text('Pair desktop')),
+              const PopupMenuItem(
+                value: 'pair',
+                child: Text('Pair another desktop'),
+              ),
               if (desktop != null)
                 const PopupMenuItem(
                   value: 'forget',
-                  child: Text('Unpair device'),
+                  child: Text('Unpair this device'),
                 ),
             ],
           ),
@@ -324,243 +567,64 @@ class _HostsScreenState extends State<HostsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Your hosts.',
-                    style: TextStyle(
-                      fontSize: 34,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    desktop == null
-                        ? 'Pair your desktop. Take your terminal with you.'
-                        : 'From $desktop',
-                    style: const TextStyle(
-                      color: Color(0xffa1b1cb),
-                      fontSize: 15,
-                    ),
-                  ),
-                  if (lastSync != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 5),
-                      child: Text(
-                        'Last synced ${lastSync!.toLocal().toString().substring(0, 16)}',
-                        style: const TextStyle(
-                          color: Color(0xffa1b1cb),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
             if (busy) const LinearProgressIndicator(minHeight: 2),
-            if (comparison != null)
+            if (error != null) issueBanner(),
+            if (desktop == null)
+              Expanded(child: onboarding())
+            else ...[
               Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Compare this code on your desktop, then approve pairing.',
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      comparison!,
-                      style: const TextStyle(
-                        fontSize: 36,
+                      'Hosts',
+                      style: TextStyle(
+                        fontSize: 32,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: 6,
-                        color: accent,
+                        letterSpacing: -.8,
                       ),
                     ),
-                    TextButton(
-                      onPressed: () => setState(() {
-                        pairingCancelled = true;
-                        comparison = null;
-                      }),
-                      child: const Text('Cancel pairing'),
+                    const SizedBox(height: 7),
+                    Text(
+                      'From $desktop',
+                      style: const TextStyle(fontSize: 16, color: muted),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      syncLabel,
+                      style: const TextStyle(fontSize: 14, color: muted),
                     ),
                   ],
                 ),
               ),
-            if (error != null)
+              if (sessions.isNotEmpty) sessionsPanel(),
               Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-                child: Text(
-                  error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            if (sessions.isNotEmpty)
-              SizedBox(
-                height: 58,
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  scrollDirection: Axis.horizontal,
-                  itemCount: sessions.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
-                  itemBuilder: (_, i) => ActionChip(
-                    avatar: const Icon(Icons.terminal, size: 16),
-                    label: Text(sessions[i].host.name),
-                    onPressed: () => unawaited(terminal(sessions[i])),
-                  ),
-                ),
-              ),
-            if (desktop != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 8,
-                ),
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
                 child: TextField(
+                  controller: search,
                   onChanged: (value) {
                     noteInteraction();
                     setState(() => query = value);
                   },
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
-                    hintText: 'Find a host',
-                    contentPadding: EdgeInsets.symmetric(vertical: 14),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search, color: muted),
+                    hintText: 'Search hosts',
+                    suffixIcon: query.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear search',
+                            onPressed: () {
+                              search.clear();
+                              setState(() => query = '');
+                            },
+                            icon: const Icon(Icons.close),
+                          ),
                   ),
                 ),
               ),
-            Expanded(
-              child: desktop == null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.devices_outlined,
-                              size: 80,
-                              color: accent,
-                            ),
-                            const SizedBox(height: 28),
-                            const Text(
-                              'One collection. Anywhere.',
-                              style: TextStyle(
-                                fontSize: 23,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Add and organize hosts on your desktop. Harbor keeps a secure copy here for direct SSH connections.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Color(0xffa1b1cb),
-                                height: 1.5,
-                              ),
-                            ),
-                            const SizedBox(height: 28),
-                            FilledButton.icon(
-                              onPressed: busy ? null : pair,
-                              icon: const Icon(Icons.qr_code_scanner),
-                              label: const Text('Pair desktop'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : filtered.isEmpty
-                  ? Center(
-                      child: Text(
-                        hosts.isEmpty
-                            ? 'Add hosts on your desktop, then sync.'
-                            : 'No hosts match your search.',
-                        style: const TextStyle(color: Color(0xffa1b1cb)),
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: sync,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) {
-                          final host = filtered[index];
-                          final showGroup =
-                              index == 0 ||
-                              filtered[index - 1].group != host.group;
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (showGroup)
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    top: 16,
-                                    bottom: 8,
-                                  ),
-                                  child: Text(
-                                    host.group.isEmpty
-                                        ? 'Ungrouped'
-                                        : host.group,
-                                    style: const TextStyle(
-                                      color: accent,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              Card(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                elevation: 0,
-                                color: surface,
-                                child: ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 6,
-                                  ),
-                                  leading: Container(
-                                    width: 42,
-                                    height: 42,
-                                    decoration: BoxDecoration(
-                                      color: accent.withValues(alpha: .1),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Icon(
-                                      Icons.dns_outlined,
-                                      color: accent,
-                                    ),
-                                  ),
-                                  title: Text(
-                                    host.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    '${host.username}@${host.address}:${host.port}',
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Color(0xffa1b1cb),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  trailing: const Icon(
-                                    Icons.chevron_right,
-                                    color: accent,
-                                  ),
-                                  onTap: () => open(host),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-            ),
+              Expanded(child: hostList(filtered)),
+            ],
           ],
         ),
       ),

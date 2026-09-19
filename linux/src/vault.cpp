@@ -71,6 +71,13 @@ QByteArray unseal(const QByteArray &box, const QByteArray &key, const QByteArray
     return plain;
 }
 
+QString validateHostEndpoint(const QString &hostname, int port) {
+    static const QRegularExpression address("^[A-Za-z0-9][A-Za-z0-9.:%_-]{0,252}$");
+    if (QHostAddress(hostname).isNull() && !address.match(hostname).hasMatch()) return "Enter a hostname or IP address without spaces.";
+    if (port < 1 || port > 65535) return "Port must be between 1 and 65535.";
+    return {};
+}
+
 QString validateHost(const QJsonObject &host) {
     const QStringList fields{"name", "hostname", "username", "group", "authType", "password", "privateKey", "passphrase", "hostKey", "notes"};
     for (const auto &field : fields) if (!host.value(field).isString()) return "Host fields must be strings.";
@@ -90,14 +97,12 @@ QString validateHost(const QJsonObject &host) {
         if (length > 100 || length + 4 > static_cast<quint32>(wire.size()) || wire.mid(4, length) != parts[0]) return "Server key algorithm does not match its data.";
         if (parts[0] == "ssh-ed25519" && (wire.size() != 51 || qFromBigEndian<quint32>(reinterpret_cast<const uchar *>(wire.constData() + 15)) != 32)) return "Invalid Ed25519 server key.";
     }
-    static const QRegularExpression address("^[A-Za-z0-9][A-Za-z0-9.:%_-]{0,252}$");
     if (host.value("name").toString().trimmed().isEmpty() || host.value("name").toString().size() > 120) return "Enter a host name of at most 120 characters.";
-    if (QHostAddress(host.value("hostname").toString()).isNull() && !address.match(host.value("hostname").toString()).hasMatch()) return "Enter a hostname or IP address without spaces.";
+    const auto endpointError = validateHostEndpoint(host.value("hostname").toString(), host.value("port").toInt());
+    if (!endpointError.isEmpty()) return endpointError;
     const auto username = host.value("username").toString();
     static const QRegularExpression usernamePattern("^[A-Za-z_][A-Za-z0-9_.-]{0,63}[$]?$");
     if (!usernamePattern.match(username).hasMatch()) return "Enter a valid SSH username.";
-    const int port = host.value("port").toInt();
-    if (port < 1 || port > 65535) return "Port must be between 1 and 65535.";
     const auto auth = host.value("authType").toString();
     if (auth != "password" && auth != "key") return "Choose an authentication method.";
     for (const auto &credential : {host.value("password").toString(), host.value("passphrase").toString()}) if (credential.toUtf8().size() > 32768 || credential.contains('\n') || credential.contains('\r') || credential.contains(QChar(0))) return "Credential contains unsupported characters or exceeds 32 KiB.";
