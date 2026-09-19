@@ -13,7 +13,7 @@ Build Swift macOS, Qt Linux and Flutter Android SSH managers. Desktop authority,
 
 ## Environment
 
-Workspace Ubuntu 26.04.1. No sudo passwordless access; Docker socket unavailable. Development tools were bootstrapped without system changes: Qt/compiler under `/tmp/harbor-sysroot`, Flutter, Android SDK, Java and Swift under `/home/notsg/.local/share/harbor-tools`, Python QA environment under `/tmp/harbor-qa`. Xcode is unavailable; Mac build/runtime checks require Mac access later.
+Initial workspace: Ubuntu 26.04.1. Linux development tools were bootstrapped without system changes: Qt/compiler under `/tmp/harbor-sysroot`, Flutter, Android SDK, Java and Swift under `/home/notsg/.local/share/harbor-tools`, Python QA environment under `/tmp/harbor-qa`. On 2026-09-19 the user provided SSH access to their Mac and authorized normal tool installation/app storage. Mac project: `/Users/notsg/shivansh/notsg/Harbor`, with Xcode 27/Swift 6.4 and the official Apple Metal compiler installed for the build.
 
 ## Decisions
 
@@ -29,7 +29,7 @@ Linux Release app, askpass helper, security tests, live protocol tests and Debia
 
 Actual Dart code paired and synced with Linux, observed deletion and rejected revoked sync. Dart SSH passed password, key and encrypted-key authentication with both Ed25519 and RSA server keys, command execution, PTY and resize. Final Flutter analysis is clean and all seven tests passed independently. The signed release APK also passed native API 30 emulator checks: real PIN gate, pairing/full sync, encrypted persistence, cold restart, all three SSH authentication methods, terminal software-keyboard input, background lock, and offline-desktop SSH. Screenshots and binaries are in `artifacts/`.
 
-Swift 6.2.3 parsed all Mac application/helper/test sources. The actual portable host model compiled and passed executable validation. XcodeGen generated the checked-in Xcode project successfully. Native Mac runtime remains untested.
+Native universal Mac Release build succeeded. Eleven native XCTest cases passed, including all three SSH authentication methods through the real credential helper, command execution, server-side PTY resize, changed-key rejection, encrypted storage and the actual loopback pairing/sync listener. A separate twelfth fixture test passed with Android's actual Dart client pairing and syncing directly over the Mac's `100.64.x.x` address. Root inspected the native terminal bitmap. See MAC-VALIDATION.md.
 
 ## Review progress
 
@@ -41,4 +41,4 @@ Latest available test harnesses: `linux/tests/security.cpp`, `linux/tests/sync_f
 
 Linux and Android binaries, source archive, screenshots and checksums are collected in `artifacts/`. Source is committed locally. See TEST-RESULTS.md for the executed evidence and README.md for installation. SDKs and private Android release signing material remain under the user-local tools directory for future builds. Disposable services and credentials are cleaned up after testing.
 
-The remaining platform validation requires a Mac: run `macos/scripts/build.sh` and `macos/scripts/test.sh`, then verify native authentication, Keychain/helper access, terminals and Mac-to-Android pairing. No native Mac build or runtime success is claimed. Windows, cloud service, desktop-to-desktop sync and app-store publication remain outside scope.
+The Mac app and updated Linux/Android artifacts are delivered with the source. Remaining release checks are interactive owner authentication, manual QR approval in the release UI, broader device/OS compatibility, and Developer ID signing/notarization. Windows, cloud service, desktop-to-desktop sync and app-store publication remain outside scope.

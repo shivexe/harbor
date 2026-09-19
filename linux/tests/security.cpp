@@ -46,6 +46,15 @@ int main(int argc, char **argv) {
         QTemporaryDir directory;
         Vault vault(directory.path() + "/vault.json");
         vault.unlock("correct horse harbor battery");
+        {
+            SyncServer server(vault);
+            check(server.start(0));
+            auto origin = [&](const QString &address) { return QString("http://%1:%2").arg(address).arg(server.port()); };
+            check(server.invite(origin("100.64.0.0")).value("url").toString() == origin("100.64.0.0"));
+            check(server.invite(origin("100.127.255.255")).value("url").toString() == origin("100.127.255.255"));
+            check(rejects([&] { server.invite(origin("100.63.255.255")); }));
+            check(rejects([&] { server.invite(origin("100.128.0.0")); }));
+        }
         QJsonObject host{{"name", "Test host"}, {"hostname", "127.0.0.1"}, {"port", 22}, {"username", "harbor"}, {"group", "Tests"}, {"authType", "password"}, {"password", "never plaintext"}, {"privateKey", ""}, {"passphrase", ""}, {"hostKey", ""}, {"notes", ""}};
         vault.upsert(host);
         check(vault.hosts().size() == 1 && vault.data().value("revision").toInt() == 2);

@@ -63,6 +63,8 @@ void main() {
     for (final url in [
       'http://127.0.0.1:45873',
       'http://192.168.1.3',
+      'http://100.64.0.0',
+      'http://100.127.255.255',
       'http://[fd00::1]:45873',
       'http://[::1]',
     ]) {
@@ -70,6 +72,8 @@ void main() {
     }
     for (final url in [
       'http://8.8.8.8',
+      'http://100.63.255.255',
+      'http://100.128.0.0',
       'http://localhost',
       'https://192.168.1.2',
       'http://user@192.168.1.2',

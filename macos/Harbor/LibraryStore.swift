@@ -18,14 +18,15 @@ final class LibraryStore: ObservableObject {
     var onLock: (() -> Void)?
     private var lockDescriptor: Int32 = -1
 
-    init() {
-        do {
-            try claimLibrary()
-            Keychain.removeTemporaryItems()
-            let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Harbor", isDirectory: true)
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent("Sessions", isDirectory: true))
-        } catch { self.error = error.localizedDescription }
+    init() {}
+
+    #if DEBUG
+    init(testVault: Vault, library: Library) {
+        vault = testVault
+        self.library = library
+        loaded = true
     }
+    #endif
 
     private func claimLibrary() throws {
         guard lockDescriptor == -1 else { return }
@@ -69,6 +70,9 @@ final class LibraryStore: ObservableObject {
             }
             guard try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your encrypted Harbor host library"), generation == lockGeneration else { return }
             try claimLibrary()
+            Keychain.removeTemporaryItems()
+            let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Harbor", isDirectory: true)
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("Sessions", isDirectory: true))
             let vault = try Vault()
             var library = try vault.load()
             if library.signingKey.isEmpty {

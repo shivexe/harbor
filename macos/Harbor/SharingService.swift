@@ -267,7 +267,7 @@ final class SharingService: ObservableObject {
         if inet_pton(AF_INET, value, &ipv4) == 1 {
             let octets = value.split(separator: ".").compactMap { Int($0) }
             guard octets.count == 4 else { return false }
-            return octets[0] == 10 || octets[0] == 127 || (octets[0] == 172 && (16...31).contains(octets[1])) || (octets[0] == 192 && octets[1] == 168) || (octets[0] == 169 && octets[1] == 254)
+            return octets[0] == 10 || octets[0] == 127 || (octets[0] == 100 && (64...127).contains(octets[1])) || (octets[0] == 172 && (16...31).contains(octets[1])) || (octets[0] == 192 && octets[1] == 168) || (octets[0] == 169 && octets[1] == 254)
         }
         var ipv6 = in6_addr()
         if inet_pton(AF_INET6, value, &ipv6) == 1 {

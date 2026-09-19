@@ -98,7 +98,7 @@ static bool privateAddress(const QHostAddress &address) {
     if (address.isLoopback()) return true;
     if (address.protocol() == QAbstractSocket::IPv4Protocol) {
         auto n = address.toIPv4Address();
-        return (n >> 24) == 10 || (n >> 20) == 0xac1 || (n >> 16) == 0xc0a8 || (n >> 16) == 0xa9fe;
+        return (n >> 24) == 10 || (n >> 20) == 0xac1 || (n >> 16) == 0xc0a8 || (n >> 16) == 0xa9fe || (n & 0xffc00000u) == 0x64400000u;
     }
     if (address.protocol() == QAbstractSocket::IPv6Protocol) {
         auto n = address.toIPv6Address();

@@ -53,6 +53,7 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
     @Published var status = "Connecting"
     private let directory: URL
     private let reference = UUID().uuidString
+    private var credentialStored = false
     private var cleaned = false
 
     init(host: Host, root: URL) throws {
@@ -90,6 +91,7 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
                 let helper = Keychain.helperURL
                 guard !host.secret.contains("\n"), !host.secret.contains("\r"), FileManager.default.isExecutableFile(atPath: helper.path) else { throw HarborError.message("The credential helper is missing or the credential contains a line break.") }
                 try Keychain.put(Data(host.secret.utf8), account: "askpass-\(reference)")
+                credentialStored = true
                 environment["SSH_ASKPASS"] = helper.path
                 environment["SSH_ASKPASS_REQUIRE"] = "force"
                 environment["HARBOR_ASKPASS_REFERENCE"] = reference
@@ -128,7 +130,7 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
     private func cleanup() {
         guard !cleaned else { return }
         cleaned = true
-        Keychain.remove("askpass-\(reference)")
+        if credentialStored { Keychain.remove("askpass-\(reference)") }
         try? FileManager.default.removeItem(at: directory)
     }
 

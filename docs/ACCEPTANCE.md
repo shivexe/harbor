@@ -35,6 +35,6 @@ Record executed commands and actual results in TEST-RESULTS.md. A source review 
 
 - Linux CMake build and executable, automated checks and actual UI screenshot.
 - Android flutter analyze, unit/widget tests, APK build; emulator checks if tooling permits. Identify debug signing versus release signing explicitly.
-- macOS project, pinned dependency, helper embedding, syntax checks where possible, Mac test targets and build instructions. Native Xcode build/runtime validation remains pending without Mac access.
+- macOS project, pinned dependency, helper embedding, native build/test evidence and build instructions. Distinguish automated native checks from interactive owner authentication and Developer ID distribution validation.
 - Source code contains no explanatory comments written for this app; third-party files/license notices are preserved as required. Build tools' mandatory metadata directives are not stripped blindly.
 - Repository excludes local credentials, SDKs, build caches and temporary test identity material. Artifacts have filenames/checksums and a documented launch path.

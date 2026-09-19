@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import AppKit
+import Darwin
 import SwiftTerm
 import XCTest
 @testable import Harbor
@@ -66,6 +67,260 @@ final class HarborTests: XCTestCase {
         XCTAssertEqual(cache.count, 0)
         XCTAssertNil(cache.nextExpiry)
     }
+
+    #if DEBUG
+    @MainActor
+    func testLoopbackPairingRetrySyncDeletionAndRevocation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = try Vault(directory: directory, key: SymmetricKey(size: .bits256))
+        var library = Library()
+        library.signingKey = Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString()
+        let host = Host(name: "Loopback", address: "127.0.0.1", username: "tester", secret: "fixture-credential")
+        library.hosts = [host]
+        try vault.save(library)
+        let store = LibraryStore(testVault: vault, library: library)
+        let sharing = SharingService(store: store)
+        store.onLock = { [weak sharing] in sharing?.stop() }
+        defer { store.lock() }
+        sharing.address = "127.0.0.1"
+        sharing.port = String(Int.random(in: 30000...60000))
+        sharing.start()
+        XCTAssertTrue(sharing.enabled, sharing.error ?? "")
+        sharing.invite()
+        let first = try XCTUnwrap(sharing.invitation)
+        let secret = try XCTUnwrap(Data(base64Encoded: first.secret))
+        let deviceID = UUID().uuidString.lowercased()
+        let nonce = Data(repeating: 7, count: 32).base64EncodedString()
+        let request = try SyncCrypto.seal(PairRequest(deviceId: deviceID, deviceName: "Test phone", clientNonce: nonce), key: secret, aad: "harbor/pair-request/v1/\(first.pairId)")
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let firstPath = "/v1/pair/\(first.pairId)"
+        let pending = try await post(session, port: sharing.port, path: firstPath, body: JSONEncoder().encode(request))
+        XCTAssertEqual(pending.status, 202)
+        XCTAssertEqual(sharing.pending?.id, deviceID)
+        sharing.approve()
+        XCTAssertNil(sharing.error)
+        let approved = try await post(session, port: sharing.port, path: firstPath, body: JSONEncoder().encode(request))
+        XCTAssertEqual(approved.status, 200)
+        let original = try JSONDecoder().decode(Envelope.self, from: approved.body)
+        let paired = try SyncCrypto.open(PairResponse.self, envelope: original, key: secret, aad: "harbor/pair-response/v1/\(first.pairId)")
+        XCTAssertEqual(paired.deviceId, deviceID)
+        XCTAssertEqual(paired.vaultId, library.desktopID)
+        sharing.invite()
+        XCTAssertNotEqual(sharing.invitation?.pairId, first.pairId)
+        let retried = try await post(session, port: sharing.port, path: firstPath, body: JSONEncoder().encode(request))
+        XCTAssertEqual(retried.status, 200)
+        let cached = try JSONDecoder().decode(Envelope.self, from: retried.body)
+        XCTAssertEqual(cached.nonce, original.nonce)
+        XCTAssertEqual(cached.ciphertext, original.ciphertext)
+        XCTAssertEqual(cached.tag, original.tag)
+        let wrong = try SyncCrypto.seal(PairRequest(deviceId: UUID().uuidString.lowercased(), deviceName: "Other", clientNonce: nonce), key: secret, aad: "harbor/pair-request/v1/\(first.pairId)")
+        let rejected = try await post(session, port: sharing.port, path: firstPath, body: JSONEncoder().encode(wrong))
+        XCTAssertEqual(rejected.status, 403)
+        let syncKey = try XCTUnwrap(Data(base64Encoded: paired.syncKey))
+        let snapshot = try await sync(session, port: sharing.port, store: store, deviceID: deviceID, key: syncKey)
+        XCTAssertEqual(snapshot.hosts.count, 1)
+        XCTAssertEqual(snapshot.hosts.first?.password, host.secret)
+        XCTAssertEqual(snapshot.vaultId, library.desktopID)
+        store.delete(host)
+        XCTAssertNil(store.error)
+        let deleted = try await sync(session, port: sharing.port, store: store, deviceID: deviceID, key: syncKey)
+        XCTAssertTrue(deleted.hosts.isEmpty)
+        XCTAssertGreaterThan(deleted.revision, snapshot.revision)
+        sharing.revoke(try XCTUnwrap(store.library.devices.first))
+        let syncRequest = try makeSyncRequest(vaultID: library.desktopID, deviceID: deviceID, key: syncKey)
+        let revoked = try await post(session, port: sharing.port, path: "/v1/sync", body: JSONEncoder().encode(syncRequest))
+        XCTAssertEqual(revoked.status, 403)
+        store.lock()
+        XCTAssertFalse(sharing.enabled)
+        XCTAssertFalse(store.loaded)
+    }
+
+    @MainActor
+    func testDisposableServerThroughNativeTerminal() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixtureURL = workspace.appendingPathComponent(".work/ssh-fixture-hosts.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else { throw XCTSkip("Disposable SSH fixture is unavailable.") }
+        let fixtures = try JSONDecoder().decode([WireHost].self, from: Data(contentsOf: fixtureURL))
+        XCTAssertEqual(fixtures.count, 3)
+        let root = workspace.appendingPathComponent(".work/ssh-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let port = 48605
+        for (index, fixture) in fixtures.enumerated() {
+            var host = Host(name: fixture.name, address: "127.0.0.1", port: port, username: fixture.username)
+            host.auth = fixture.authType == "password" ? .password : .key
+            host.secret = host.auth == .password ? fixture.password : fixture.passphrase
+            host.privateKey = fixture.privateKey
+            host.knownHosts = "[127.0.0.1]:\(port) \(fixture.hostKey)\n"
+            if index == 0 {
+                let scan = try await SSH.inspect(host)
+                XCTAssertTrue(scan.records.contains(fixture.hostKey))
+            }
+            let session = try TerminalSession(host: host, root: root)
+            let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 800, height: 500), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            var closed = false
+            defer { if !closed { session.close(); window.close() } }
+            window.contentView = session.terminal
+            window.makeKeyAndOrderFront(nil)
+            let ready = await waitForTerminal(session, text: "harbor-fixture $", seconds: 15)
+            guard ready else {
+                let output = String(data: session.terminal.getTerminal().getBufferAsData(kind: .normal), encoding: .utf8) ?? ""
+                XCTFail("SSH shell did not reach its prompt for \(fixture.name); status \(session.status), denied \(output.contains("Permission denied")), host key failure \(output.contains("Host key verification failed")), askpass failure \(output.contains("askpass"))")
+                return
+            }
+            let marker = "HARBOR_QA_\(index)_DONE"
+            let command = Array("printf 'HARBOR_QA_%s_DONE\\n' '\(index)'\r".utf8)
+            session.terminal.send(data: command[...])
+            let executed = await waitForTerminal(session, text: marker, seconds: 8)
+            XCTAssertTrue(executed, "SSH shell did not execute the command for \(fixture.name).")
+            if index == 1 {
+                let bounds = session.terminal.bounds
+                session.terminal.displayIfNeeded()
+                if let bitmap = session.terminal.bitmapImageRepForCachingDisplay(in: bounds) {
+                    session.terminal.cacheDisplay(in: bounds, to: bitmap)
+                    if let png = bitmap.representation(using: .png, properties: [:]) {
+                        try png.write(to: workspace.appendingPathComponent(".work/mac-terminal.png"), options: .atomic)
+                    }
+                }
+            }
+            if index == 0 {
+                let columns = session.terminal.getTerminal().cols
+                window.setContentSize(NSSize(width: 1100, height: 650))
+                var resized = false
+                for _ in 0..<30 {
+                    if session.terminal.getTerminal().cols > columns { resized = true; break }
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                }
+                XCTAssertTrue(resized, "The terminal did not resize with its window.")
+                if resized {
+                    let dimensions = session.terminal.getTerminal().getDims()
+                    let sizeCommand = Array("printf 'HARBOR_QA_SIZE_%s_DONE\\n' \"$(stty size)\"\r".utf8)
+                    session.terminal.send(data: sizeCommand[...])
+                    let remoteSize = await waitForTerminal(session, text: "HARBOR_QA_SIZE_\(dimensions.rows) \(dimensions.cols)_DONE", seconds: 8)
+                    XCTAssertTrue(remoteSize, "The remote PTY did not receive the terminal resize.")
+                }
+            }
+            session.close()
+            window.close()
+            closed = true
+            let sessions = root.appendingPathComponent("Sessions")
+            XCTAssertTrue((try FileManager.default.contentsOfDirectory(atPath: sessions.path)).isEmpty)
+        }
+        let changed = fixtures[1]
+        var wrong = Host(name: changed.name, address: "127.0.0.1", port: port, username: changed.username)
+        wrong.auth = .key
+        wrong.privateKey = changed.privateKey
+        let parts = changed.hostKey.split(separator: " ")
+        var key = try XCTUnwrap(Data(base64Encoded: String(try XCTUnwrap(parts.last))))
+        key[key.count - 1] ^= 1
+        wrong.knownHosts = "[127.0.0.1]:\(port) \(parts[0]) \(key.base64EncodedString())\n"
+        let rejected = try TerminalSession(host: wrong, root: root)
+        defer { rejected.close() }
+        let refused = await waitForTerminal(rejected, text: "Host key verification failed", seconds: 8)
+        XCTAssertTrue(refused, "OpenSSH did not report the changed server key.")
+        XCTAssertFalse(String(data: rejected.terminal.getTerminal().getBufferAsData(kind: .normal), encoding: .utf8)?.contains("harbor-fixture $") ?? false)
+    }
+
+    @MainActor
+    func testAndroidInteropAgainstLiveMacSharing() async throws {
+        struct Configuration: Decodable { let address: String; let port: Int }
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let work = workspace.appendingPathComponent(".work")
+        let configURL = work.appendingPathComponent("dart-interop-config.json")
+        guard FileManager.default.fileExists(atPath: configURL.path) else { throw XCTSkip("Android interop fixture is unavailable.") }
+        let config = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: configURL))
+        let fixtures = try JSONDecoder().decode([WireHost].self, from: Data(contentsOf: work.appendingPathComponent("ssh-fixture-hosts.json")))
+        let key = try XCTUnwrap(fixtures.first?.hostKey)
+        let directory = work.appendingPathComponent("dart-interop-vault-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = try Vault(directory: directory, key: SymmetricKey(size: .bits256))
+        var library = Library()
+        library.signingKey = Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString()
+        var host = Host(name: "Android interop", address: "127.0.0.1", port: 48605, username: "harbor", secret: "fixture-credential")
+        host.knownHosts = "[127.0.0.1]:48605 \(key)\n"
+        library.hosts = [host]
+        try vault.save(library)
+        let store = LibraryStore(testVault: vault, library: library)
+        let sharing = SharingService(store: store)
+        store.onLock = { [weak sharing] in sharing?.stop() }
+        defer { store.lock() }
+        sharing.address = config.address
+        sharing.port = String(config.port)
+        sharing.start()
+        guard sharing.enabled else { XCTFail(sharing.error ?? "Sharing did not start."); return }
+        sharing.invite()
+        let invitation = try XCTUnwrap(sharing.invitation)
+        let invitationURL = work.appendingPathComponent("dart-interop-invitation.json")
+        let doneURL = work.appendingPathComponent("dart-interop-done")
+        try? FileManager.default.removeItem(at: invitationURL)
+        try? FileManager.default.removeItem(at: doneURL)
+        defer { try? FileManager.default.removeItem(at: invitationURL) }
+        let descriptor = open(invitationURL.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+        guard descriptor >= 0 else { throw HarborError.message("Could not create the private Android invitation fixture.") }
+        let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        try file.write(contentsOf: JSONEncoder().encode(invitation))
+        try file.close()
+        for _ in 0..<900 {
+            if sharing.pending != nil, !sharing.approvedPairing { sharing.approve() }
+            if let error = sharing.error { XCTFail(error); return }
+            if FileManager.default.fileExists(atPath: doneURL.path) {
+                XCTAssertEqual(store.library.devices.count, 1)
+                return
+            }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTFail("Android did not complete pairing and two syncs before the interop deadline.")
+    }
+
+    @MainActor
+    private func waitForTerminal(_ session: TerminalSession, text: String, seconds: Int) async -> Bool {
+        for _ in 0..<(seconds * 10) {
+            if String(data: session.terminal.getTerminal().getBufferAsData(kind: .normal), encoding: .utf8)?.contains(text) == true { return true }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        return false
+    }
+
+    private func makeSyncRequest(vaultID: String, deviceID: String, key: Data) throws -> Envelope {
+        let nonce = SyncCrypto.random(32).base64EncodedString()
+        var envelope = try SyncCrypto.seal(SyncRequest(version: 1, vaultId: vaultID, requestId: nonce), key: key, aad: "harbor/sync-request/v1/\(deviceID)")
+        envelope.deviceId = deviceID
+        return envelope
+    }
+
+    @MainActor
+    private func sync(_ session: URLSession, port: String, store: LibraryStore, deviceID: String, key: Data) async throws -> Snapshot {
+        let request = try makeSyncRequest(vaultID: store.library.desktopID, deviceID: deviceID, key: key)
+        let response = try await post(session, port: port, path: "/v1/sync", body: JSONEncoder().encode(request))
+        XCTAssertEqual(response.status, 200)
+        let sealed = try JSONDecoder().decode(Envelope.self, from: response.body)
+        let signed = try SyncCrypto.open(SignedSnapshot.self, envelope: sealed, key: key, aad: "harbor/sync-response/v1/\(deviceID)")
+        let publicKey = try Curve25519.Signing.PrivateKey(rawRepresentation: Data(base64Encoded: store.library.signingKey)!).publicKey
+        XCTAssertTrue(publicKey.isValidSignature(Data(base64Encoded: signed.signature)!, for: Data("harbor.snapshot.v1\n\(signed.payload)".utf8)))
+        return try JSONDecoder().decode(Snapshot.self, from: Data(base64Encoded: signed.payload)!)
+    }
+
+    private func post(_ session: URLSession, port: String, path: String, body: Data) async throws -> (status: Int, body: Data) {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        request.timeoutInterval = 5
+        for attempt in 0..<20 {
+            do {
+                let (data, response) = try await session.data(for: request)
+                return ((response as! HTTPURLResponse).statusCode, data)
+            } catch {
+                if attempt == 19 { throw error }
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+        throw HarborError.message("The test listener did not start.")
+    }
+    #endif
 
     func testEncryptedMessageAuthenticatesContext() throws {
         let key = Data(repeating: 7, count: 32)
@@ -140,8 +395,12 @@ final class HarborTests: XCTestCase {
     func testPairingAddressRejectsPublicAndDNSOrigins() {
         XCTAssertTrue(SharingService.isPrivateAddress("192.168.1.3"))
         XCTAssertTrue(SharingService.isPrivateAddress("172.16.0.1"))
+        XCTAssertTrue(SharingService.isPrivateAddress("100.64.0.0"))
+        XCTAssertTrue(SharingService.isPrivateAddress("100.127.255.255"))
         XCTAssertTrue(SharingService.isPrivateAddress("fd00::1"))
         XCTAssertFalse(SharingService.isPrivateAddress("8.8.8.8"))
+        XCTAssertFalse(SharingService.isPrivateAddress("100.63.255.255"))
+        XCTAssertFalse(SharingService.isPrivateAddress("100.128.0.0"))
         XCTAssertFalse(SharingService.isPrivateAddress("172.32.0.1"))
         XCTAssertFalse(SharingService.isPrivateAddress("desktop.local"))
     }

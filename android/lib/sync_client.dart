@@ -74,6 +74,7 @@ bool privateAddress(InternetAddress address) {
   if (address.type == InternetAddressType.IPv4) {
     return b[0] == 10 ||
         b[0] == 127 ||
+        (b[0] == 100 && b[1] >= 64 && b[1] <= 127) ||
         (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||
         (b[0] == 192 && b[1] == 168) ||
         (b[0] == 169 && b[1] == 254);

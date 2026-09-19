@@ -1,6 +1,6 @@
 # Executed verification
 
-Validation performed on Ubuntu 26.04 amd64 with disposable servers and credentials. These checks establish tested behavior; they do not constitute an external security audit or native macOS certification.
+Validation performed on Ubuntu 26.04 amd64, an Android API 30 emulator, and the user's Apple silicon Mac with Xcode 27. Disposable servers and credentials were used. These checks establish tested behavior; they do not constitute an external security audit or app-store certification.
 
 ## Linux
 
@@ -35,9 +35,9 @@ Direct Dart SSH tests passed password, key and encrypted-key authentication, com
 
 Flutter widget tests exercised a read-only grouped/searchable host list, a narrow pairing screen, device-authentication gating, cancellation and relocking after backgrounding. Screenshots use real fonts and Material icons. Terminal input regression tests verify that human input counts as activity while remote DSR replies cannot keep the idle lock alive or consume the user's Ctrl modifier.
 
-Final `flutter analyze` reported no issues and `flutter test` passed all seven tests; root independently reran both after the final application changes. The release APK built successfully and root verified its APK v2 signature with `apksigner`. It uses a dedicated local RSA-4096 release identity rather than the Android debug key. Manifest inspection confirmed `dev.harbor.app`, version 1.0.0/1, minimum API 24, target API 36, and arm64-v8a/armeabi-v7a/x86_64 libraries.
+Final `flutter analyze` reported no issues and `flutter test` passed all seven tests, including the later RFC6598 address checks. Root independently ran analysis and tests before that address-only update. The release APK built successfully and its APK v2 signature was verified with `apksigner`. It uses a dedicated local RSA-4096 release identity rather than the Android debug key. Manifest inspection confirmed `dev.harbor.app`, version 1.0.0/1, minimum API 24, target API 36, and arm64-v8a/armeabi-v7a/x86_64 libraries.
 
-The final signed release APK was installed and tested on an Android 11/API 30 x86_64 emulator. Root independently confirmed the installed package and completed emulator boot. The Android agent executed these native checks successfully:
+The signed release APK was installed and tested on an Android 11/API 30 x86_64 emulator before the later RFC6598 address-only update. Root independently confirmed the installed package and completed emulator boot. The Android agent executed these native checks successfully:
 
 - The real Android device-credential PIN prompt gated access; cancellation exposed no hosts.
 - The actual app paired with the Linux listener and received a signed encrypted three-host snapshot.
@@ -62,7 +62,19 @@ The following checks ran on Linux:
 - The exact SwiftTerm 1.20.0 APIs were reviewed against its tagged source. The delegate bridge preserves PTY behavior and denies automatic terminal clipboard access.
 - The ICNS application icon decoded successfully.
 
-Xcode compilation and XCTest execution, AppKit layout, LocalAuthentication, Keychain helper access, signing/notarization, native Mac SSH sessions and Mac-to-Android pairing still require macOS. No successful native Mac build or runtime test is claimed. See `macos/README.md` for the build/test commands.
+On 2026-09-19 native verification ran on the supplied Mac:
+
+- Xcode 27 built the Release app and embedded helper as universal arm64/x86_64 binaries. The final build script succeeded using the checked-in project, without XcodeGen installed.
+- All eleven native XCTest cases passed with zero failures. They covered shared vectors, vault encryption/tampering, validation/framing, the actual Network.framework pairing/sync listener, approved-response retries, deletion, revocation, lock and clipboard protection.
+- The native terminal test authenticated with password, private key and encrypted private key through the real SwiftTerm/OpenSSH session and Keychain credential helper. Computed shell output proved command execution; remote `stty size` verified PTY resize. An altered pinned host key was rejected and session files were cleaned up.
+- Root inspected a native terminal bitmap showing the actual command result.
+- A separate twelfth native fixture test passed while Android's actual Dart client paired directly with the Mac at `100.64.207.29:48606` and verified two fresh encrypted, Ed25519-signed snapshots. Both the Dart command and the native test exited successfully.
+- All three applications now accept exactly RFC6598 `100.64.0.0/10` for pairing. Boundary tests passed; Linux and Android artifacts were rebuilt, and the Android signature verified.
+- The delivered Mac app and helper were ad hoc signed for local use. `codesign --verify --deep --strict` passed; the app launched successfully from `~/shivansh/notsg/Harbor/Harbor.app` and remained running.
+
+The SSH test initially used a newer SwiftTerm inspection API and then encountered a test-created NSWindow ownership crash. Both test issues were corrected before the successful runs. The actual app compiled successfully before those test corrections.
+
+Interactive owner LocalAuthentication, manual QR approval in the release UI, physical-phone camera scanning, broader macOS/device coverage and Developer ID signing/notarization remain manual release checks. See [MAC-VALIDATION.md](MAC-VALIDATION.md) and `macos/README.md` for details and commands.
 
 ## Source and delivery
 
