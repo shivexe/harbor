@@ -19,7 +19,7 @@ Desktop compatibility also depends on the installed OpenSSH/OpenSSL implementati
 
 ## Validation and resource limits
 
-Import and paste share validation. Encrypted input can remain a draft while a passphrase is entered. Missing or wrong passphrases preserve the editor and previous saved host. Replacing a key clears the previous passphrase. Save-time desktop validation runs away from the UI; cancellation or vault locking discards pending results.
+Import and paste share validation. Encrypted input can remain a draft while a passphrase is entered. Linux and Mac encrypted-PEM validation preserve the editor and previous saved host when the passphrase is missing or wrong. Mac currently checks encrypted OpenSSH containers structurally at Save; a missing or wrong OpenSSH passphrase is reported during connection instead. Replacing a key clears the previous passphrase. Save-time desktop validation runs away from the UI; cancellation or vault locking discards pending results.
 
 Private-key input is limited to 256 KiB. Android bounds PBKDF2 to 2,000,000 iterations with an 8–64-byte salt, and OpenSSH bcrypt to 1,024 rounds with a 1–64-byte salt. Derivation runs in an isolate. Linux bounds PKCS#8 PBKDF2 work before calling OpenSSL and bounds external OpenSSH validation with a timeout. Mac validation uses a bounded system-tool subprocess with a three-second deadline and termination fallback. Mac PEM passphrases are limited to 4096 UTF-8 bytes; Linux accepts up to 32 KiB. Desktop validation rejects NUL and line breaks in passphrases.
 
