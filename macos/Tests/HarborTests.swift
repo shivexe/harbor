@@ -95,11 +95,11 @@ final class HarborTests: XCTestCase {
 
         let editor = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 560, height: 650), styleMask: [.titled], backing: .buffered, defer: false)
         editor.isReleasedWhenClosed = false
-        editor.contentView = NSHostingView(rootView: HostEditor(host: Host(), store: store).preferredColorScheme(.dark))
+        editor.contentView = NSHostingView(rootView: HostEditor(host: Host(auth: .none), store: store).preferredColorScheme(.dark))
         editor.makeKeyAndOrderFront(nil)
         defer { editor.close() }
         try await Task.sleep(nanoseconds: 350_000_000)
-        try capture(editor, to: workspace.appendingPathComponent(".work/mac-1.1-editor.png"))
+        try capture(editor, to: workspace.appendingPathComponent(".work/mac-1.1.1-editor.png"))
         editor.orderOut(nil)
 
         let host = Host(name: "Web server", address: "192.168.1.42", username: "deploy", secret: "fixture-password")
@@ -283,6 +283,43 @@ final class HarborTests: XCTestCase {
         let refused = await waitForTerminal(rejected, text: "Host key verification failed", seconds: 8)
         XCTAssertTrue(refused, "OpenSSH did not report the changed server key.")
         XCTAssertFalse(String(data: rejected.terminal.getTerminal().getBufferAsData(kind: .normal), encoding: .utf8)?.contains("harbor-fixture $") ?? false)
+    }
+
+    @MainActor
+    func testNoPasswordThroughNativeTerminal() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixtureURL = workspace.appendingPathComponent(".work/ssh-fixture-hosts-none.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else { throw XCTSkip("Disposable no-password SSH fixture is unavailable.") }
+        let fixtures = try JSONDecoder().decode([WireHost].self, from: Data(contentsOf: fixtureURL))
+        let fixture = try XCTUnwrap(fixtures.first { $0.authType == "none" })
+        XCTAssertTrue(fixture.password.isEmpty)
+        XCTAssertTrue(fixture.privateKey.isEmpty)
+        XCTAssertTrue(fixture.passphrase.isEmpty)
+        let port = 48607
+        var host = Host(name: fixture.name, address: "127.0.0.1", port: port, username: fixture.username, auth: .none)
+        host.knownHosts = "[127.0.0.1]:\(port) \(fixture.hostKey)\n"
+        let scan = try await SSH.inspect(host)
+        XCTAssertTrue(scan.records.contains(fixture.hostKey))
+        let root = workspace.appendingPathComponent(".work/no-password-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = try TerminalSession(host: host, root: root)
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 800, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = session.terminal
+        window.makeKeyAndOrderFront(nil)
+        defer { session.close(); window.close() }
+        let ready = await waitForTerminal(session, text: "harbor-fixture $", seconds: 15)
+        XCTAssertTrue(ready, "No-password SSH did not reach the shell prompt; status \(session.status).")
+        guard ready else { return }
+        let command = Array("printf 'HARBOR_NONE_%s_DONE\\n' 'EXECUTED'\r".utf8)
+        session.terminal.send(data: command[...])
+        let executed = await waitForTerminal(session, text: "HARBOR_NONE_EXECUTED_DONE", seconds: 8)
+        XCTAssertTrue(executed, "No-password SSH did not execute a command.")
+        let sessions = root.appendingPathComponent("Sessions")
+        let entries = try FileManager.default.contentsOfDirectory(atPath: sessions.path)
+        let files = try FileManager.default.contentsOfDirectory(atPath: sessions.appendingPathComponent(try XCTUnwrap(entries.first)).path)
+        XCTAssertEqual(Set(files), ["known_hosts"])
     }
 
     @MainActor
@@ -493,5 +530,32 @@ final class HarborTests: XCTestCase {
         XCTAssertEqual(key.secret, "fixture-passphrase")
         XCTAssertEqual(key.port, 2222)
         XCTAssertThrowsError(try HostEditor.preparedHost(host, portText: "0", password: "", passphrase: ""))
+    }
+
+    @MainActor
+    func testNoPasswordHostClearsInactiveCredentialsAndExportsNone() throws {
+        var host = Host(name: "Tailnet", address: "server.tailnet.ts.net", username: "deploy", auth: .none)
+        try host.validate()
+        host.secret = "old-password"
+        host.privateKey = "-----BEGIN PRIVATE KEY-----\nold\n-----END PRIVATE KEY-----"
+        XCTAssertThrowsError(try host.validate())
+        let saved = try HostEditor.preparedHost(host, portText: "22", password: "draft-password", passphrase: "draft-passphrase")
+        try saved.validate()
+        XCTAssertEqual(saved.auth.rawValue, "none")
+        XCTAssertTrue(saved.secret.isEmpty)
+        XCTAssertTrue(saved.privateKey.isEmpty)
+        let wire = WireHost(saved)
+        XCTAssertEqual(wire.authType, "none")
+        XCTAssertTrue(wire.password.isEmpty)
+        XCTAssertTrue(wire.privateKey.isEmpty)
+        XCTAssertTrue(wire.passphrase.isEmpty)
+        host.auth = .password
+        XCTAssertNoThrow(try host.validate())
+        host.secret = ""
+        XCTAssertThrowsError(try host.validate())
+        host.auth = .key
+        XCTAssertNoThrow(try host.validate())
+        host.privateKey = ""
+        XCTAssertThrowsError(try host.validate())
     }
 }

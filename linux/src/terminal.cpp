@@ -52,55 +52,59 @@ Terminal::Terminal(const QJsonObject &host, QWidget *parent) : QWidget(parent), 
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(terminal_);
-    capability_ = randomBytes(32).toBase64();
-    password_ = host.value("password").toString().toUtf8();
-    passphrase_ = host.value("passphrase").toString().toUtf8();
-    askpass_.setSocketOptions(QLocalServer::UserAccessOption);
-    const auto socketName = temporary_->path() + "/askpass";
-    if (!askpass_.listen(socketName)) throw std::runtime_error("Cannot open credential channel");
-    connect(&askpass_, &QLocalServer::newConnection, this, [this] {
-        while (auto socket = askpass_.nextPendingConnection()) {
-            struct ucred peer{};
-            socklen_t size = sizeof(peer);
-            if (getsockopt(socket->socketDescriptor(), SOL_SOCKET, SO_PEERCRED, &peer, &size) != 0 || peer.uid != getuid() || QFileInfo(QString("/proc/%1/exe").arg(peer.pid)).canonicalFilePath() != QFileInfo(QApplication::applicationDirPath() + "/harbor-askpass").canonicalFilePath()) { socket->abort(); socket->deleteLater(); continue; }
-            QFile process(QString("/proc/%1/status").arg(peer.pid));
-            bool child = false;
-            if (process.open(QIODevice::ReadOnly)) for (const auto &line : process.readAll().split('\n')) if (line.startsWith("PPid:")) child = line.mid(5).trimmed().toInt() == terminal_->getShellPID();
-            if (!child) { socket->abort(); socket->deleteLater(); continue; }
-            socket->setParent(this);
-            auto buffer = std::make_shared<QByteArray>();
-            connect(socket, &QLocalSocket::readyRead, this, [this, socket, buffer] {
-                *buffer += socket->readAll();
-                if (buffer->size() > 4096) { socket->abort(); return; }
-                if (!buffer->contains('\n')) return;
-                const auto request = QJsonDocument::fromJson(buffer->split('\n').first()).object();
-                if (request.value("capability").toString().toLatin1() != capability_) { socket->abort(); return; }
-                const auto prompt = request.value("prompt").toString().toLower();
-                QByteArray answer;
-                if (prompt.contains("passphrase")) answer = passphrase_;
-                else if (prompt.contains("password")) answer = password_;
-                socket->write(answer.toBase64() + '\n');
-                socket->flush();
-                wipe(answer);
-                socket->disconnectFromServer();
-            });
-            connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
-            QTimer::singleShot(10000, socket, [socket] { socket->abort(); socket->deleteLater(); });
-        }
-    });
+    const auto auth = host.value("authType").toString();
     auto environment = QProcessEnvironment::systemEnvironment();
-    const auto helper = QApplication::applicationDirPath() + "/harbor-askpass";
-    if (!QFile::exists(helper)) throw std::runtime_error("The harbor-askpass helper is missing");
-    environment.insert("SSH_ASKPASS", helper);
-    environment.insert("SSH_ASKPASS_REQUIRE", "force");
-    environment.insert("HARBOR_ASKPASS_SOCKET", socketName);
-    environment.insert("HARBOR_ASKPASS_CAPABILITY", QString::fromLatin1(capability_));
-    environment.insert("DISPLAY", environment.value("DISPLAY", ":0"));
+    if (auth != "none") {
+        capability_ = randomBytes(32).toBase64();
+        password_ = auth == "password" ? host.value("password").toString().toUtf8() : QByteArray();
+        passphrase_ = auth == "key" ? host.value("passphrase").toString().toUtf8() : QByteArray();
+        askpass_.setSocketOptions(QLocalServer::UserAccessOption);
+        const auto socketName = temporary_->path() + "/askpass";
+        if (!askpass_.listen(socketName)) throw std::runtime_error("Cannot open credential channel");
+        connect(&askpass_, &QLocalServer::newConnection, this, [this] {
+            while (auto socket = askpass_.nextPendingConnection()) {
+                struct ucred peer{};
+                socklen_t size = sizeof(peer);
+                if (getsockopt(socket->socketDescriptor(), SOL_SOCKET, SO_PEERCRED, &peer, &size) != 0 || peer.uid != getuid() || QFileInfo(QString("/proc/%1/exe").arg(peer.pid)).canonicalFilePath() != QFileInfo(QApplication::applicationDirPath() + "/harbor-askpass").canonicalFilePath()) { socket->abort(); socket->deleteLater(); continue; }
+                QFile process(QString("/proc/%1/status").arg(peer.pid));
+                bool child = false;
+                if (process.open(QIODevice::ReadOnly)) for (const auto &line : process.readAll().split('\n')) if (line.startsWith("PPid:")) child = line.mid(5).trimmed().toInt() == terminal_->getShellPID();
+                if (!child) { socket->abort(); socket->deleteLater(); continue; }
+                socket->setParent(this);
+                auto buffer = std::make_shared<QByteArray>();
+                connect(socket, &QLocalSocket::readyRead, this, [this, socket, buffer] {
+                    *buffer += socket->readAll();
+                    if (buffer->size() > 4096) { socket->abort(); return; }
+                    if (!buffer->contains('\n')) return;
+                    const auto request = QJsonDocument::fromJson(buffer->split('\n').first()).object();
+                    if (request.value("capability").toString().toLatin1() != capability_) { socket->abort(); return; }
+                    const auto prompt = request.value("prompt").toString().toLower();
+                    QByteArray answer;
+                    if (prompt.contains("passphrase")) answer = passphrase_;
+                    else if (prompt.contains("password")) answer = password_;
+                    socket->write(answer.toBase64() + '\n');
+                    socket->flush();
+                    wipe(answer);
+                    socket->disconnectFromServer();
+                });
+                connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
+                QTimer::singleShot(10000, socket, [socket] { socket->abort(); socket->deleteLater(); });
+            }
+        });
+        const auto helper = QApplication::applicationDirPath() + "/harbor-askpass";
+        if (!QFile::exists(helper)) throw std::runtime_error("The harbor-askpass helper is missing");
+        environment.insert("SSH_ASKPASS", helper);
+        environment.insert("SSH_ASKPASS_REQUIRE", "force");
+        environment.insert("HARBOR_ASKPASS_SOCKET", socketName);
+        environment.insert("HARBOR_ASKPASS_CAPABILITY", QString::fromLatin1(capability_));
+        environment.insert("DISPLAY", environment.value("DISPLAY", ":0"));
+    } else {
+        for (const auto &name : {"SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "HARBOR_ASKPASS_SOCKET", "HARBOR_ASKPASS_CAPABILITY", "SSH_AUTH_SOCK", "SSH_AGENT_PID"}) environment.remove(name);
+    }
     QFile known(temporary_->path() + "/known_hosts");
     const auto pinned = hostKeyName(host).toUtf8() + ' ' + host.value("hostKey").toString().toUtf8() + '\n';
     if (!known.open(QIODevice::WriteOnly) || !known.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner) || known.write(pinned) != pinned.size() || !known.flush()) throw std::runtime_error("Cannot prepare pinned server key");
-    QStringList arguments{"-F", "/dev/null", "-tt", "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + known.fileName(), "-o", "GlobalKnownHostsFile=/dev/null", "-o", "ForwardAgent=no", "-o", "IdentityAgent=none", "-o", "ClearAllForwardings=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", "-o", "NumberOfPasswordPrompts=1", "-p", QString::number(host.value("port").toInt()), "-l", host.value("username").toString()};
-    const auto auth = host.value("authType").toString();
+    QStringList arguments{"-F", "/dev/null", "-tt", "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + known.fileName(), "-o", "GlobalKnownHostsFile=/dev/null", "-o", "ForwardAgent=no", "-o", "IdentityAgent=none", "-o", "ClearAllForwardings=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", "-o", "NumberOfPasswordPrompts=" + QString(auth == "none" ? "0" : "1"), "-p", QString::number(host.value("port").toInt()), "-l", host.value("username").toString()};
     if (auth == "key") {
         QFile key(temporary_->path() + "/identity");
         auto contents = host.value("privateKey").toString().toUtf8();
@@ -109,6 +113,7 @@ Terminal::Terminal(const QJsonObject &host, QWidget *parent) : QWidget(parent), 
         wipe(contents);
         arguments << "-o" << "IdentitiesOnly=yes" << "-o" << "PreferredAuthentications=publickey" << "-i" << key.fileName();
     } else if (auth == "password") arguments << "-o" << "PubkeyAuthentication=no" << "-o" << "PreferredAuthentications=password,keyboard-interactive";
+    else arguments << "-o" << "BatchMode=yes" << "-o" << "IdentitiesOnly=yes" << "-o" << "PubkeyAuthentication=no" << "-o" << "PasswordAuthentication=no" << "-o" << "KbdInteractiveAuthentication=no" << "-o" << "HostbasedAuthentication=no" << "-o" << "GSSAPIAuthentication=no";
     arguments << "--" << host.value("hostname").toString();
     terminal_->setEnvironment(environment.toStringList());
     const auto ssh = QStandardPaths::findExecutable("ssh");

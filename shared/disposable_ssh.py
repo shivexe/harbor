@@ -18,7 +18,7 @@ class Server(asyncssh.SSHServer):
         self.public_key = public_key
 
     def begin_auth(self, username):
-        return True
+        return username != "noauth"
 
     def password_auth_supported(self):
         return True
@@ -154,9 +154,9 @@ async def run(args):
     public_key = host_key.export_public_key("openssh").decode().strip().split(" ")[:2]
     pinned = " ".join(public_key)
     hosts = []
-    for name, auth, key, passphrase in (("Password fixture", "password", "", ""), ("Private-key fixture", "key", plain_key, ""), ("Encrypted-key fixture", "key", encrypted_key, "fixture-key-passphrase")):
-        hosts.append({"id": old_ids.get(name, str(uuid.uuid4())), "name": name, "hostname": "127.0.0.1", "port": port, "username": "harbor", "group": "Integration lab", "authType": auth, "password": "fixture-password" if auth == "password" else "", "privateKey": key, "passphrase": passphrase, "hostKey": pinned, "notes": "Disposable local SSH test server; credentials have no external access."})
-    for filename, host in zip(("password.json", "key.json", "encrypted-key.json"), hosts):
+    for name, auth, key, passphrase in (("Password fixture", "password", "", ""), ("Private-key fixture", "key", plain_key, ""), ("Encrypted-key fixture", "key", encrypted_key, "fixture-key-passphrase"), ("No-auth fixture", "none", "", "")):
+        hosts.append({"id": old_ids.get(name, str(uuid.uuid4())), "name": name, "hostname": "127.0.0.1", "port": port, "username": "noauth" if auth == "none" else "harbor", "group": "Integration lab", "authType": auth, "password": "fixture-password" if auth == "password" else "", "privateKey": key, "passphrase": passphrase, "hostKey": pinned, "notes": "Disposable local SSH test server; credentials have no external access."})
+    for filename, host in zip(("password.json", "key.json", "encrypted-key.json", "none.json"), hosts):
         single = directory / filename
         single.write_text(json.dumps(host, indent=2) + "\n")
         os.chmod(single, 0o600)

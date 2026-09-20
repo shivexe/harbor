@@ -139,6 +139,40 @@ void main() {
         'hostKey': '',
         'notes': '',
       };
+      final noPassword = {...host, 'authType': 'none', 'password': ''};
+      final sealed = await encrypt(
+        await sign({
+          ...snapshot,
+          'hosts': [noPassword],
+        }),
+        List.filled(32, 7),
+        'harbor/sync-response/v1/test-device',
+      );
+      final imported = await client.verifySnapshot(
+        await decrypt(
+          sealed,
+          List.filled(32, 7),
+          'harbor/sync-response/v1/test-device',
+        ),
+        pairing,
+        'fresh',
+        1,
+      );
+      expect((imported['hosts'] as List).single['authType'], 'none');
+      await expectLater(
+        client.verifySnapshot(
+          await sign({
+            ...snapshot,
+            'hosts': [
+              {...noPassword, 'password': 'stale'},
+            ],
+          }),
+          pairing,
+          'fresh',
+          1,
+        ),
+        throwsFormatException,
+      );
       await expectLater(
         client.verifySnapshot(
           await sign({

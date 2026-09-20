@@ -14,9 +14,10 @@ struct Host: Codable, Identifiable, Equatable {
     var knownHosts = ""
 
     enum Authentication: String, Codable, CaseIterable {
-        case password, key
+        case none, password, key
         var label: String {
             switch self {
+            case .none: return "No password (Tailscale SSH)"
             case .password: return "Password"
             case .key: return "Private key"
             }
@@ -38,6 +39,7 @@ struct Host: Codable, Identifiable, Equatable {
               username.rangeOfCharacter(from: .controlCharacters) == nil else { throw HarborError.message("Enter an SSH username without spaces.") }
         if auth == .key, !privateKey.contains("PRIVATE KEY") { throw HarborError.message("Import an SSH private key.") }
         if auth == .password, secret.isEmpty { throw HarborError.message("Enter a password.") }
+        if auth == .none, !secret.isEmpty || !privateKey.isEmpty { throw HarborError.message("No-password hosts cannot store SSH credentials.") }
     }
 }
 

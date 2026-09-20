@@ -48,7 +48,10 @@ class Host {
     if (port is! int ||
         port < 1 ||
         port > 65535 ||
-        !{'password', 'key'}.contains(auth)) {
+        !{'password', 'key', 'none'}.contains(auth) ||
+        (auth == 'none' && (json['password'] as String).isNotEmpty) ||
+        (auth == 'none' && (json['privateKey'] as String).isNotEmpty) ||
+        (auth == 'none' && (json['passphrase'] as String).isNotEmpty)) {
       throw const FormatException('Invalid host record');
     }
     for (final field in ['id', 'name', 'hostname', 'username']) {

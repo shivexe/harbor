@@ -478,7 +478,9 @@ class _HostsScreenState extends State<HostsScreen> {
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                '${host.username}@${host.address}:${host.port}',
+                                host.auth == 'none'
+                                    ? 'No password · ${host.username}@${host.address}:${host.port}'
+                                    : '${host.username}@${host.address}:${host.port}',
                                 style: const TextStyle(
                                   color: muted,
                                   fontSize: 14,

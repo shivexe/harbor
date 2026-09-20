@@ -104,10 +104,11 @@ QString validateHost(const QJsonObject &host) {
     static const QRegularExpression usernamePattern("^[A-Za-z_][A-Za-z0-9_.-]{0,63}[$]?$");
     if (!usernamePattern.match(username).hasMatch()) return "Enter a valid SSH username.";
     const auto auth = host.value("authType").toString();
-    if (auth != "password" && auth != "key") return "Choose an authentication method.";
+    if (auth != "password" && auth != "key" && auth != "none") return "Choose an authentication method.";
     for (const auto &credential : {host.value("password").toString(), host.value("passphrase").toString()}) if (credential.toUtf8().size() > 32768 || credential.contains('\n') || credential.contains('\r') || credential.contains(QChar(0))) return "Credential contains unsupported characters or exceeds 32 KiB.";
     if (auth == "password" && host.value("password").toString().isEmpty()) return "Enter a password.";
     if (auth == "key" && !host.value("privateKey").toString().contains("PRIVATE KEY-----")) return "Import a valid PEM or OpenSSH private key.";
+    if (auth == "none" && (!host.value("password").toString().isEmpty() || !host.value("privateKey").toString().isEmpty() || !host.value("passphrase").toString().isEmpty())) return "No-password hosts cannot store SSH credentials.";
     if (host.value("group").toString().size() > 120) return "Group must be at most 120 characters.";
     return {};
 }

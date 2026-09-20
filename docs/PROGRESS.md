@@ -1,5 +1,11 @@
 # Harbor progress
 
+## Version 1.1.1: passwordless SSH
+
+The user reported that Tailscale SSH needs only hostname and username. All three clients now support `authType: "none"`. Desktop new-host editors default to No password (Tailscale SSH), clear inactive credentials when saved, and retain server fingerprint verification. Existing password/key records remain unchanged. Mac native tests and a real passwordless terminal connection, Android analysis/tests and four SSH modes, Linux security/UI/terminal checks, and real Linux-to-Android encrypted sync passed. See [PASSWORDLESS-VALIDATION.md](PASSWORDLESS-VALIDATION.md).
+
+The new Mac copy is `~/shivansh/notsg/Harbor/Harbor-1.1.1.app`; quit the old app before opening it. The signed Android update is also copied to `~/Downloads/harbor-1.1.1-android.apk` on the supplied Mac. Upgrade Android before syncing passwordless hosts because older versions reject the new authentication value. All installers and the source archive use `1.1.1` filenames. Existing app copies and vaults are preserved.
+
 ## Version 1.1: interface redesign
 
 The user rejected the first version's visual quality, first-host form and address-driven pairing flow. Version 1.1.0 redesigns all three platforms with simpler host forms, automatic network selection and QR-first pairing. The researched brief is in [UI-REDESIGN.md](UI-REDESIGN.md); the reviewed screenshots and runtime evidence are described in [UI-VALIDATION.md](UI-VALIDATION.md). Root handled research and visual/integration review; the existing Sol high agents wrote the platform implementations. Prior functional validation below describes version 1.0.0. Updated binaries and screenshots use `1.1` filenames in `artifacts/`. On the supplied Mac, `Harbor-1.1.app` is staged beside the original app; quit the old copy before opening the update. Existing vaults are retained.

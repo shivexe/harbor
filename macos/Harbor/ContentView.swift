@@ -69,7 +69,7 @@ struct ContentView: View {
         .confirmationDialog("Delete \(deleteHost?.name ?? "host")?", isPresented: Binding(get: { deleteHost != nil }, set: { if !$0 { deleteHost = nil } }), titleVisibility: .visible) {
             Button("Delete host", role: .destructive) { if let host = deleteHost { store.delete(host) }; deleteHost = nil }
         } message: { Text("The host will also be removed from Android after its next sync.") }
-        .onReceive(NotificationCenter.default.publisher(for: .newHarborHost)) { _ in if store.loaded { editor = Host() } }
+        .onReceive(NotificationCenter.default.publisher(for: .newHarborHost)) { _ in if store.loaded { editor = Host(auth: .none) } }
         .onChange(of: store.loaded) { _, loaded in if !loaded { editor = nil; candidate = nil; showingSharing = false } }
         .onChange(of: store.library.hosts.map(\.id)) { before, after in
             if before.isEmpty && after.count == 1 { selection = after.first }
@@ -84,7 +84,7 @@ struct ContentView: View {
                 Text("Harbor").font(.system(size: 20, weight: .semibold))
                 Spacer()
                 if !store.library.hosts.isEmpty {
-                    Button { editor = Host() } label: { Image(systemName: "plus").frame(width: 36, height: 36) }
+                    Button { editor = Host(auth: .none) } label: { Image(systemName: "plus").frame(width: 36, height: 36) }
                         .buttonStyle(.plain).help("New host (⌘N)").accessibilityLabel("New host")
                 }
             }.padding(.horizontal, 20).padding(.top, 28).padding(.bottom, 24)
@@ -151,7 +151,7 @@ struct ContentView: View {
                 Text(store.sessions.isEmpty ? "Hosts" : "Sessions").font(.system(size: 28, weight: .semibold))
                 Spacer()
                 if !store.library.hosts.isEmpty {
-                    Button { editor = Host() } label: { Label("Add host", systemImage: "plus") }
+                    Button { editor = Host(auth: .none) } label: { Label("Add host", systemImage: "plus") }
                         .buttonStyle(.bordered).controlSize(.large)
                 }
             }.padding(.horizontal, 32).padding(.top, 28).padding(.bottom, 22)
@@ -199,9 +199,9 @@ struct ContentView: View {
                     }.padding(.top, 8)
                 } else if store.library.hosts.isEmpty {
                     Text("Add your first host").font(.system(size: 28, weight: .semibold))
-                    Text("Enter a server address and your SSH credentials. You can connect as soon as it is saved.")
+                    Text("Enter a server address and username, then choose how to authenticate. You can connect as soon as it is saved.")
                         .font(.system(size: 14)).foregroundStyle(Palette.secondary).frame(maxWidth: 440, alignment: .leading)
-                    Button("Add host") { editor = Host() }.buttonStyle(HarborActionStyle())
+                    Button("Add host") { editor = Host(auth: .none) }.buttonStyle(HarborActionStyle())
                 } else {
                     Text("Choose a host").font(.system(size: 28, weight: .semibold))
                     Text("Select a host in the sidebar to see its connection details.")

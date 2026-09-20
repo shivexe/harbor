@@ -64,7 +64,7 @@ struct HostEditor: View {
                         Text("Authentication").font(.system(size: 14, weight: .medium))
                         Picker("Authentication", selection: $host.auth) {
                             ForEach(Host.Authentication.allCases, id: \.self) { method in Text(method.label).tag(method) }
-                        }.pickerStyle(.segmented).labelsHidden()
+                        }.pickerStyle(.radioGroup).labelsHidden()
                     }
                     if host.auth == .password {
                         VStack(alignment: .leading, spacing: 8) {
@@ -76,7 +76,7 @@ struct HostEditor: View {
                                 .focused($focusedField, equals: .password)
                                 .accessibilityLabel("Password")
                         }
-                    } else {
+                    } else if host.auth == .key {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Private key").font(.system(size: 14, weight: .medium))
                             HStack(spacing: 12) {
@@ -98,6 +98,9 @@ struct HostEditor: View {
                                 .focused($focusedField, equals: .passphrase)
                                 .accessibilityLabel("Key passphrase")
                         }
+                    } else {
+                        Text("Use this when Tailscale SSH is enabled on the destination. Harbor still verifies the server fingerprint before connecting.")
+                            .font(.system(size: 12)).foregroundStyle(Palette.secondary)
                     }
                     DisclosureGroup(isExpanded: $moreOptions) {
                         VStack(alignment: .leading, spacing: 20) {
@@ -144,7 +147,7 @@ struct HostEditor: View {
                         Text("More options").font(.system(size: 14, weight: .medium))
                     }
                     .tint(Palette.accent)
-                    Text("Credentials are encrypted on this Mac. Paired devices receive changes when they sync.")
+                    Text(host.auth == .none ? "No SSH password or key is stored for this host. Paired devices receive changes when they sync." : "Credentials are encrypted on this Mac. Paired devices receive changes when they sync.")
                         .font(.system(size: 12)).foregroundStyle(Palette.secondary)
                 }.padding(32).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -186,8 +189,8 @@ struct HostEditor: View {
         saved.name = saved.name.trimmingCharacters(in: .whitespacesAndNewlines)
         if saved.name.isEmpty { saved.name = saved.address }
         saved.port = port
-        saved.secret = saved.auth == .password ? password : passphrase
-        if saved.auth == .password { saved.privateKey = "" }
+        saved.secret = saved.auth == .password ? password : saved.auth == .key ? passphrase : ""
+        if saved.auth != .key { saved.privateKey = "" }
         return saved
     }
 

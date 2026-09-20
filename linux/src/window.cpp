@@ -291,6 +291,7 @@ Window::Window(Vault &vault) : vault_(vault), sync_(vault, this) {
     connect_ = new QPushButton("Connect", home);
     connect_->setProperty("primary", true);
     edit_ = new QPushButton("Edit host", home);
+    edit_->setObjectName("editHost");
     remove_ = new QPushButton("Delete host", home);
     actions->addWidget(connect_);
     actions->addWidget(edit_);
@@ -394,7 +395,9 @@ void Window::select() {
     }
     title_->setText(host.value("name").toString());
     endpoint_->setText(host.value("username").toString() + "@" + host.value("hostname").toString() + ":" + QString::number(host.value("port").toInt()));
-    details_->setText((host.value("authType") == "key" ? "Private key" : "Password") + QString(" authentication") + (host.value("group").toString().isEmpty() ? QString() : "  ·  " + host.value("group").toString()) + (host.value("notes").toString().isEmpty() ? QString() : "\n\n" + host.value("notes").toString()));
+    const auto authentication = host.value("authType").toString();
+    const auto authenticationLabel = authentication == "none" ? "Tailscale SSH · No password" : authentication == "key" ? "Private key authentication" : "Password authentication";
+    details_->setText(QString(authenticationLabel) + (host.value("group").toString().isEmpty() ? QString() : "  ·  " + host.value("group").toString()) + (host.value("notes").toString().isEmpty() ? QString() : "\n\n" + host.value("notes").toString()));
     const auto key = host.value("hostKey").toString().section(' ', 1, 1).toLatin1();
     fingerprint_->setText(key.isEmpty() ? "Server identity will be checked before connecting." : "Verified server key  ·  SHA256:" + QString::fromLatin1(QCryptographicHash::hash(QByteArray::fromBase64(key), QCryptographicHash::Sha256).toBase64(QByteArray::OmitTrailingEquals)));
 }
@@ -444,7 +447,8 @@ void Window::editHost(bool creating) {
     auth->setObjectName("hostAuthentication");
     auth->addItem("Password", "password");
     auth->addItem("Private key", "key");
-    auth->setCurrentIndex(original.value("authType").toString() == "key" ? 1 : 0);
+    auth->addItem("No password (Tailscale SSH)", "none");
+    auth->setCurrentIndex(original.value("authType").toString() == "key" ? 1 : original.value("authType").toString() == "password" ? 0 : 2);
     field(fields, "Sign in with", auth);
     auto passwordBlock = new QWidget(body);
     auto passwordLayout = new QVBoxLayout(passwordBlock);
@@ -465,7 +469,11 @@ void Window::editHost(bool creating) {
     passphrase->setEchoMode(QLineEdit::Password);
     field(keyLayout, "Key passphrase, if needed", passphrase);
     fields->addWidget(keyBlock);
-    auto updateAuthentication = [&] { passwordBlock->setVisible(auth->currentIndex() == 0); keyBlock->setVisible(auth->currentIndex() == 1); };
+    auto noneHint = new QLabel("Tailscale SSH uses your tailnet identity. The destination must have Tailscale SSH enabled.", body);
+    noneHint->setProperty("muted", true);
+    noneHint->setWordWrap(true);
+    fields->addWidget(noneHint);
+    auto updateAuthentication = [&] { passwordBlock->setVisible(auth->currentData() == "password"); keyBlock->setVisible(auth->currentData() == "key"); noneHint->setVisible(auth->currentData() == "none"); };
     connect(auth, &QComboBox::currentIndexChanged, &dialog, updateAuthentication);
     updateAuthentication();
     auto more = new QToolButton(body);
@@ -541,9 +549,9 @@ void Window::editHost(bool creating) {
         host["username"] = username->text().trimmed();
         host["group"] = group->text().trimmed();
         host["authType"] = auth->currentData().toString();
-        host["password"] = auth->currentIndex() == 0 ? password->text() : QString();
-        host["privateKey"] = auth->currentIndex() == 1 ? privateKey : QString();
-        host["passphrase"] = auth->currentIndex() == 1 ? passphrase->text() : QString();
+        host["password"] = auth->currentData() == "password" ? password->text() : QString();
+        host["privateKey"] = auth->currentData() == "key" ? privateKey : QString();
+        host["passphrase"] = auth->currentData() == "key" ? passphrase->text() : QString();
         host["hostKey"] = hostKey;
         host["notes"] = notes->toPlainText();
         return host;

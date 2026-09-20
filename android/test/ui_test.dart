@@ -163,7 +163,7 @@ void main() {
           'id': '11111111-1111-4111-8111-${i.toString().padLeft(12, '0')}',
           'port': 22,
           'username': 'harbor',
-          'authType': 'password',
+          'authType': i == 0 ? 'none' : 'password',
           'password': '',
           'privateKey': '',
           'passphrase': '',
@@ -189,6 +189,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Production'), findsOneWidget);
     expect(find.text('Orchard primary'), findsOneWidget);
+    expect(find.textContaining('No password'), findsOneWidget);
     expect(find.byIcon(Icons.edit), findsNothing);
     expect(tester.takeException(), isNull);
     await capture(key, 'android-1.1-hosts', tester);

@@ -87,7 +87,13 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
                 arguments += ["-i", key.path, "-o", "IdentitiesOnly=yes", "-o", "PreferredAuthentications=publickey"]
             }
             if host.auth == .password { arguments += ["-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password,keyboard-interactive"] }
-            if !host.secret.isEmpty {
+            if host.auth == .none {
+                arguments += ["-o", "BatchMode=yes", "-o", "PreferredAuthentications=none",
+                              "-o", "PubkeyAuthentication=no", "-o", "PasswordAuthentication=no",
+                              "-o", "KbdInteractiveAuthentication=no", "-o", "GSSAPIAuthentication=no",
+                              "-o", "HostbasedAuthentication=no", "-o", "IdentitiesOnly=yes"]
+            }
+            if host.auth != .none && !host.secret.isEmpty {
                 let helper = Keychain.helperURL
                 guard !host.secret.contains("\n"), !host.secret.contains("\r"), FileManager.default.isExecutableFile(atPath: helper.path) else { throw HarborError.message("The credential helper is missing or the credential contains a line break.") }
                 try Keychain.put(Data(host.secret.utf8), account: "askpass-\(reference)")

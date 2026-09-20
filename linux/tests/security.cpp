@@ -68,6 +68,18 @@ int main(int argc, char **argv) {
             check(rejects([&] { server.invite(origin("100.128.0.0")); }));
         }
         QJsonObject host{{"name", "Test host"}, {"hostname", "127.0.0.1"}, {"port", 22}, {"username", "harbor"}, {"group", "Tests"}, {"authType", "password"}, {"password", "never plaintext"}, {"privateKey", ""}, {"passphrase", ""}, {"hostKey", ""}, {"notes", ""}};
+        auto noAuth = host;
+        noAuth["authType"] = "none";
+        noAuth["password"] = "";
+        check(validateHost(noAuth).isEmpty());
+        noAuth["password"] = "unexpected";
+        check(!validateHost(noAuth).isEmpty());
+        noAuth["password"] = "";
+        noAuth["privateKey"] = "unexpected";
+        check(!validateHost(noAuth).isEmpty());
+        noAuth["privateKey"] = "";
+        noAuth["passphrase"] = "unexpected";
+        check(!validateHost(noAuth).isEmpty());
         vault.upsert(host);
         check(vault.hosts().size() == 1 && vault.data().value("revision").toInt() == 2);
         QFile file(directory.path() + "/vault.json");
