@@ -63,14 +63,18 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@07976c6290703d34c16d382cb36445f98bb43b1f
       - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e
         with:
           flutter-version: '3.47.4'
           channel: stable
           cache: true
-      - name: Install Android SDK
-        run: sdkmanager --install 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+      - name: Check Android SDK
+        run: |
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -d "$sdk_root/platforms/android-35"
+          test -d "$sdk_root/platforms/android-36"
+          test -d "$sdk_root/ndk/28.2.13676358"
+          test -x "$sdk_root/build-tools/36.0.0/apksigner"
       - name: Build signed Android APK
         shell: bash
         env:
@@ -109,8 +113,9 @@ jobs:
           flutter build apk --release --build-name "$VERSION" --build-number "$BUILD_NUMBER"
           mkdir -p ../dist
           cp build/app/outputs/flutter-apk/app-release.apk "../dist/harbor-$VERSION-android.apk"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "../dist/harbor-$VERSION-android.apk"
-          badging="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "../dist/harbor-$VERSION-android.apk")"
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          "$sdk_root/build-tools/36.0.0/apksigner" verify --verbose "../dist/harbor-$VERSION-android.apk"
+          badging="$("$sdk_root/build-tools/36.0.0/aapt" dump badging "../dist/harbor-$VERSION-android.apk")"
           [[ "$badging" == *"name='dev.harbor.app' versionCode='$BUILD_NUMBER' versionName='$VERSION'"* ]]
       - name: Remove signing files
         if: always()

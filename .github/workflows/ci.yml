@@ -21,14 +21,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@07976c6290703d34c16d382cb36445f98bb43b1f
       - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e
         with:
           flutter-version: '3.47.4'
           channel: stable
           cache: true
-      - name: Install Android SDK
-        run: sdkmanager --install 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+      - name: Check Android SDK
+        run: |
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -d "$sdk_root/platforms/android-35"
+          test -d "$sdk_root/platforms/android-36"
+          test -d "$sdk_root/ndk/28.2.13676358"
       - name: Analyze and test Android
         working-directory: android
         run: |
