@@ -489,10 +489,11 @@ def main():
         path = here / f'{section["slug"]}.svg'
         path.write_text(standalone, encoding="utf-8")
         ElementTree.fromstring(standalone)
-        master_parts.append(f'<path d="M70,{y} H1790" stroke="{COLORS["line"]}" stroke-width="1"/>')
-        master_parts.append(f'<g transform="translate(0,{y + 20})">{content}</g>')
-        y += height + 60
-    master = document("Harbor architecture and data flow", "Complete map of Harbor ownership, saving, pairing, synchronization, SSH, Android protection, key map, and architecture reading method.", "".join(master_parts), y)
+        if section["slug"] != "08-draw-architecture":
+            master_parts.append(f'<path d="M70,{y} H1790" stroke="{COLORS["line"]}" stroke-width="1"/>')
+            master_parts.append(f'<g transform="translate(0,{y + 20})">{content}</g>')
+            y += height + 60
+    master = document("Harbor architecture and data flow", "Complete map of Harbor ownership, saving, pairing, synchronization, SSH, Android protection, and key map.", "".join(master_parts), y)
     (here / "harbor-architecture.svg").write_text(master, encoding="utf-8")
     ElementTree.fromstring(master)
 
