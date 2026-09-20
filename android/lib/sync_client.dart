@@ -212,9 +212,8 @@ class SyncClient {
       ...request,
       'deviceId': deviceId,
     });
-    if (response.$1 != 200) {
-      throw StateError('Desktop unavailable or device revoked');
-    }
+    if (response.$1 == 403) throw StateError('Device revoked on desktop');
+    if (response.$1 != 200) throw StateError('Desktop unavailable');
     final signed = await decrypt(
       response.$2,
       key,

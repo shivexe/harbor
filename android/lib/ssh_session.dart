@@ -9,6 +9,7 @@ import 'models.dart';
 import 'ssh_client.dart';
 import 'security_gate.dart';
 import 'interactive_terminal.dart';
+import 'private_key_loader.dart';
 
 class Connection extends ChangeNotifier {
   Connection(this.host) {
@@ -27,6 +28,9 @@ class Connection extends ChangeNotifier {
   bool started = false;
   bool closed = false;
   bool disposed = false;
+  bool normalExit = false;
+  int activeViews = 0;
+  void Function(Connection)? onNormalExit;
   final subscriptions = <StreamSubscription<dynamic>>[];
 
   String get status => switch (stage) {
@@ -76,11 +80,16 @@ class Connection extends ChangeNotifier {
     changed();
   }
 
-  void endSession() {
+  void endSession({bool normal = false}) {
     if (closed) return;
+    normalExit = normal;
     stage = ConnectionStage.disconnected;
+    if (!normal) {
+      problem = 'Connection closed unexpectedly. Check your network and retry.';
+    }
     close();
     changed();
+    if (normal) onNormalExit?.call(this);
   }
 
   Future<void> connect() async {
@@ -137,7 +146,7 @@ class Connection extends ChangeNotifier {
       );
       advance(ConnectionStage.connected);
       await shell!.done;
-      endSession();
+      endSession(normal: shell!.exitCode != null && shell!.exitSignal == null);
     } catch (error) {
       client?.close();
       if (closed) return;
@@ -148,6 +157,8 @@ class Connection extends ChangeNotifier {
           : stage;
       problem = error is HostKeyException
           ? error.message.toString()
+          : error is PrivateKeyException
+          ? error.message
           : switch (failedAt) {
               ConnectionStage.openingSocket =>
                 error is SocketException || error is TimeoutException

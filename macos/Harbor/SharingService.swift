@@ -264,7 +264,7 @@ final class SharingService: ObservableObject {
             approvedReplies = replies
             purgeApprovedReplies()
             approved = envelope
-            pairingResult = "Paired with \(pending.name). Press Sync now on Android to receive your library."
+            pairingResult = "Paired with \(pending.name). Harbor on Android will sync your hosts."
         } catch { self.error = error.localizedDescription }
     }
 

@@ -120,7 +120,7 @@ void main() {
       expect(tester.takeException(), isNull);
       if (stage == ConnectionStage.authenticating &&
           Platform.environment['HARBOR_CAPTURE_PROGRESS'] == '1') {
-        await capture(key, 'android-1.1.2-progress', tester);
+        await capture(key, 'android-1.2-progress', tester);
       }
     }
     connection.advance(ConnectionStage.connected);
@@ -157,7 +157,7 @@ void main() {
     expect(find.byType(TerminalView), findsNothing);
     expect(find.byType(SelectableText), findsOneWidget);
     if (Platform.environment['HARBOR_CAPTURE_PROGRESS'] == '1') {
-      await capture(key, 'android-1.1.2-server-message', tester);
+      await capture(key, 'android-1.2-server-message', tester);
     }
     connection.failedAt = ConnectionStage.authenticating;
     connection.problem = 'Authentication failed.';
@@ -169,9 +169,10 @@ void main() {
       find.textContaining('https://login.example.test/check'),
       findsOneWidget,
     );
+    expect(find.text('Could not connect'), findsOneWidget);
     expect(find.text('Retry connection'), findsOneWidget);
     if (Platform.environment['HARBOR_CAPTURE_PROGRESS'] == '1') {
-      await capture(key, 'android-1.1.2-failure', tester);
+      await capture(key, 'android-1.2-failure', tester);
     }
     await tester.ensureVisible(find.text('Edit on desktop'));
     await tester.tap(find.text('Edit on desktop'));
@@ -242,6 +243,60 @@ void main() {
     expect(connection.failedAt, isNull);
     expect(connection.problem, contains('Verify this server key'));
     connection.dispose();
+  });
+
+  testWidgets('remote shell exit closes its route without a stale terminal', (
+    tester,
+  ) async {
+    final connection = Connection(fixtureHost())..started = true;
+    var closed = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: harborTheme(),
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => TerminalScreen(
+                  connection: connection,
+                  onClose: (_) => closed++,
+                  onReplace: (_, _) {},
+                ),
+              ),
+            ),
+            child: const Text('Return host'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Return host'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    connection.advance(ConnectionStage.connected);
+    await tester.pump();
+    expect(find.byType(TerminalView), findsOneWidget);
+
+    connection.endSession(normal: true);
+    await tester.pumpAndSettle();
+    expect(find.byType(TerminalScreen), findsNothing);
+    expect(find.text('Return host'), findsOneWidget);
+    expect(closed, 1);
+  });
+
+  testWidgets('unexpected shell close keeps retry and recovery visible', (
+    tester,
+  ) async {
+    final connection = Connection(fixtureHost())..started = true;
+    await tester.pumpWidget(screen(connection));
+    connection.advance(ConnectionStage.connected);
+    await tester.pump();
+    connection.endSession();
+    await tester.pump();
+    expect(find.byType(TerminalScreen), findsOneWidget);
+    expect(find.text('Connection closed'), findsOneWidget);
+    expect(find.text('Retry connection'), findsOneWidget);
+    expect(find.text('Edit on desktop'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
   });
 
   test(

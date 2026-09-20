@@ -1,22 +1,25 @@
 import AppKit
+import CryptoKit
 import SwiftUI
 
 struct Palette {
-    static let canvas = Color(red: 23.0 / 255, green: 25.0 / 255, blue: 31.0 / 255)
-    static let sidebar = Color(red: 29.0 / 255, green: 32.0 / 255, blue: 40.0 / 255)
-    static let raised = Color(red: 39.0 / 255, green: 43.0 / 255, blue: 53.0 / 255)
-    static let accent = Color(red: 168.0 / 255, green: 184.0 / 255, blue: 250.0 / 255)
-    static let text = Color(red: 241.0 / 255, green: 242.0 / 255, blue: 246.0 / 255)
-    static let secondary = Color(red: 171.0 / 255, green: 177.0 / 255, blue: 192.0 / 255)
+    static let canvas = Color(red: 36.0 / 255, green: 36.0 / 255, blue: 38.0 / 255)
+    static let sidebar = Color(red: 28.0 / 255, green: 28.0 / 255, blue: 30.0 / 255)
+    static let raised = Color(red: 48.0 / 255, green: 48.0 / 255, blue: 51.0 / 255)
+    static let accent = Color(red: 64.0 / 255, green: 156.0 / 255, blue: 255.0 / 255)
+    static let focus = Color(red: 10.0 / 255, green: 132.0 / 255, blue: 255.0 / 255)
+    static let action = Color(red: 0.0 / 255, green: 104.0 / 255, blue: 217.0 / 255)
+    static let text = Color(red: 242.0 / 255, green: 242.0 / 255, blue: 242.0 / 255)
+    static let secondary = Color(red: 177.0 / 255, green: 177.0 / 255, blue: 182.0 / 255)
 }
 
 struct HarborActionStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(Palette.canvas)
-            .padding(.horizontal, 18).frame(minHeight: 38)
-            .background(Palette.accent, in: RoundedRectangle(cornerRadius: 8))
+        configuration.label.font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14).frame(minHeight: 32)
+            .background(Palette.action, in: RoundedRectangle(cornerRadius: 6))
             .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.45)
     }
 }
@@ -41,28 +44,28 @@ struct ContentView: View {
     }
     private var groups: [String] { Set(filtered.map { $0.group.isEmpty ? "Ungrouped" : $0.group }).sorted() }
     private var selected: Host? { store.library.hosts.first { $0.id == selection } }
+    private var active: TerminalSession? { store.sessions.first { $0.id == store.activeSession } }
 
     var body: some View {
         Group {
             if store.loaded {
                 HSplitView {
-                    sidebar.frame(minWidth: 250, idealWidth: 272, maxWidth: 330)
-                    workspace.frame(minWidth: 610, maxWidth: .infinity, maxHeight: .infinity)
+                    sidebar.frame(minWidth: 220, idealWidth: 240, maxWidth: 275)
+                    workspace.frame(minWidth: 540, maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                VStack(alignment: .leading, spacing: 20) {
-                    Image(systemName: "lock.shield").font(.system(size: 36)).foregroundStyle(Palette.accent)
-                    Text("Harbor is locked").font(.system(size: 28, weight: .semibold))
-                    Text("Unlock to use your hosts and sync with Android.").font(.system(size: 14)).foregroundStyle(Palette.secondary)
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Harbor is locked").font(.system(size: 20, weight: .semibold))
+                    Text("Unlock to use your hosts and paired devices.").font(.system(size: 13)).foregroundStyle(Palette.secondary)
                     Button(store.authenticating ? "Unlocking…" : "Unlock Harbor") { Task { await store.unlock() } }
                         .buttonStyle(HarborActionStyle()).disabled(store.authenticating)
-                }.padding(48).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(Palette.canvas)
         .tint(Palette.accent)
         .foregroundStyle(Palette.text)
-        .sheet(item: $editor) { host in HostEditor(host: host, store: store) { saved in query = ""; selection = saved.id } }
+        .sheet(item: $editor) { host in HostEditor(host: host, store: store, onSaved: { saved in query = ""; selection = saved.id; store.activeSession = nil }) }
         .sheet(item: $candidate) { value in HostTrustView(candidate: value, store: store) }
         .sheet(isPresented: $showingSharing, onDismiss: { sharing.dismissInvitation() }) { SharingView(store: store, sharing: sharing) }
         .alert("Harbor", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) {
@@ -73,7 +76,7 @@ struct ContentView: View {
         } message: { Text("The host will also be removed from Android after its next sync.") }
         .onReceive(NotificationCenter.default.publisher(for: .newHarborHost)) { _ in if store.loaded { editor = Host(auth: .none) } }
         .onChange(of: store.loaded) { _, loaded in if !loaded { cancelScan(); editor = nil; candidate = nil; showingSharing = false } }
-        .onChange(of: selection) { _, _ in if scanningHost != nil { cancelScan() } }
+        .onChange(of: selection) { _, _ in if scanningHost != nil { cancelScan() }; store.activeSession = nil }
         .onChange(of: store.library.hosts.map(\.id)) { before, after in
             if before.isEmpty && after.count == 1 { selection = after.first }
             else if let selection, !after.contains(selection) { self.selection = after.first }
@@ -82,18 +85,15 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                Image(systemName: "terminal.fill").foregroundStyle(Palette.accent).font(.system(size: 19))
-                Text("Harbor").font(.system(size: 20, weight: .semibold))
+            HStack(spacing: 8) {
+                Text("Hosts").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                if !store.library.hosts.isEmpty {
-                    Button { editor = Host(auth: .none) } label: { Image(systemName: "plus").frame(width: 36, height: 36) }
-                        .buttonStyle(.plain).help("New host (⌘N)").accessibilityLabel("New host")
-                }
-            }.padding(.horizontal, 20).padding(.top, 28).padding(.bottom, 24)
+                Button { editor = Host(auth: .none) } label: { Image(systemName: "plus").frame(width: 30, height: 30) }
+                    .buttonStyle(.plain).help("New host (⌘N)").accessibilityLabel("New host")
+            }.padding(.horizontal, 16).frame(height: 52)
             if store.library.hosts.isEmpty {
                 Text("Your hosts will appear here.").font(.system(size: 13)).foregroundStyle(Palette.secondary)
-                    .padding(.horizontal, 20).padding(.top, 8)
+                    .padding(.horizontal, 16).padding(.top, 12)
                 Spacer()
             } else {
                 HStack(spacing: 10) {
@@ -103,8 +103,8 @@ struct ContentView: View {
                         Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
                             .buttonStyle(.plain).accessibilityLabel("Clear search")
                     }
-                }.font(.system(size: 14)).padding(.horizontal, 12).frame(height: 38)
-                    .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 16).padding(.bottom, 16)
+                }.font(.system(size: 13)).padding(.horizontal, 10).frame(height: 32)
+                    .background(Palette.raised, in: RoundedRectangle(cornerRadius: 6)).padding(.horizontal, 12).padding(.bottom, 10)
                 if filtered.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("No matching hosts").font(.system(size: 14, weight: .semibold))
@@ -116,13 +116,12 @@ struct ContentView: View {
                         ForEach(groups, id: \.self) { group in
                             Section(group) {
                                 ForEach(filtered.filter { ($0.group.isEmpty ? "Ungrouped" : $0.group) == group }) { host in
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "server.rack").foregroundStyle(Palette.accent).frame(width: 18)
+                                    HStack(spacing: 9) {
                                         VStack(alignment: .leading, spacing: 4) {
-                                            Text(host.name).font(.system(size: 14, weight: .medium))
-                                            Text("\(host.username)@\(host.address)").font(.system(size: 12)).foregroundStyle(Palette.secondary).lineLimit(1)
+                                            Text(host.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                                            Text("\(host.username)@\(host.address)").font(.system(size: 11)).foregroundStyle(Palette.secondary).lineLimit(1)
                                         }
-                                    }.padding(.vertical, 7).tag(host.id)
+                                    }.padding(.vertical, 4).tag(host.id)
                                         .listRowBackground(selection == host.id ? Palette.raised : Palette.sidebar)
                                         .contextMenu {
                                             Button("Connect") { connect(host) }
@@ -131,6 +130,7 @@ struct ContentView: View {
                                             Divider()
                                             Button("Delete host", role: .destructive) { deleteHost = host }
                                         }
+                                        .simultaneousGesture(TapGesture().onEnded { selection = host.id; store.activeSession = nil })
                                         .onTapGesture(count: 2) { connect(host) }
                                 }
                             }
@@ -140,37 +140,51 @@ struct ContentView: View {
             }
             Divider()
             HStack(spacing: 12) {
-                Button { showingSharing = true } label: { Label("Devices", systemImage: "iphone").frame(minHeight: 36) }.buttonStyle(.plain)
+                Button { showingSharing = true } label: { Label("Devices", systemImage: "iphone").frame(minHeight: 32) }.buttonStyle(.plain)
                 Spacer()
-                Button { store.lock() } label: { Image(systemName: "lock").frame(width: 36, height: 36) }.buttonStyle(.plain)
+                Button { store.lock() } label: { Image(systemName: "lock").frame(width: 32, height: 32) }.buttonStyle(.plain)
                     .help("Lock Harbor").accessibilityLabel("Lock Harbor")
-            }.font(.system(size: 14)).padding(.horizontal, 18).padding(.vertical, 10)
+            }.font(.system(size: 13)).padding(.horizontal, 14).padding(.vertical, 8)
         }.background(Palette.sidebar)
     }
 
     private var workspace: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center) {
-                Text(store.sessions.isEmpty ? "Hosts" : "Sessions").font(.system(size: 28, weight: .semibold))
+            HStack(spacing: 12) {
+                Text(active?.host.name ?? selected?.name ?? "Hosts")
+                    .font(.system(size: 19, weight: .semibold)).lineLimit(1)
                 Spacer()
-                if !store.library.hosts.isEmpty {
-                    Button { editor = Host(auth: .none) } label: { Label("Add host", systemImage: "plus") }
-                        .buttonStyle(.bordered).controlSize(.large)
+                if let active {
+                    Button("Host details") { selection = active.host.id; store.activeSession = nil }
+                } else if let host = selected {
+                    Button("Connect") { connect(host) }.buttonStyle(HarborActionStyle())
+                    Menu {
+                        Button("Edit host") { editor = host }
+                        Button("Verify server key") { inspect(host) }
+                        Divider()
+                        Button("Delete host", role: .destructive) { deleteHost = host }
+                    } label: { Image(systemName: "ellipsis").frame(width: 30, height: 30) }
+                        .menuIndicator(.hidden).menuStyle(.borderlessButton).accessibilityLabel("Host actions")
                 }
-            }.padding(.horizontal, 32).padding(.top, 28).padding(.bottom, 22)
+            }.padding(.horizontal, 24).frame(height: 52)
             Divider()
-            if let scanningHost {
-                scanWorkspace(scanningHost)
-            } else if store.sessions.isEmpty {
-                emptyWorkspace
-            } else {
+            if !store.sessions.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
+                        Button { store.activeSession = nil } label: { Text("Overview").frame(height: 35) }
+                            .buttonStyle(.plain).padding(.horizontal, 14)
+                            .background(store.activeSession == nil ? Palette.canvas : Palette.sidebar)
+                            .overlay(alignment: .bottom) { if store.activeSession == nil { Rectangle().fill(Palette.accent).frame(height: 2) } }
                         ForEach(store.sessions) { session in
-                            SessionTab(session: session, active: store.activeSession == session.id, select: { store.activeSession = session.id }, close: { store.close(session) })
+                            SessionTab(session: session, active: store.activeSession == session.id,
+                                       select: { store.activeSession = session.id }, close: { store.close(session) })
                         }
                     }
-                }.background(Palette.sidebar).frame(height: 44)
+                }.background(Palette.sidebar).frame(height: 36)
+            }
+            if let scanningHost {
+                scanWorkspace(scanningHost)
+            } else if active != nil {
                 ZStack {
                     ForEach(store.sessions) { session in
                         SessionWorkspace(session: session, active: store.activeSession == session.id,
@@ -178,51 +192,71 @@ struct ContentView: View {
                             .opacity(store.activeSession == session.id ? 1 : 0)
                             .allowsHitTesting(store.activeSession == session.id).accessibilityHidden(store.activeSession != session.id)
                     }
-                }.padding(12).background(Palette.canvas)
+                }.padding(8).background(Palette.canvas)
+            } else {
+                hostOverview
             }
         }
     }
 
-    private var emptyWorkspace: some View {
+    private var hostOverview: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                Image(systemName: selected == nil ? "server.rack" : "terminal").font(.system(size: 36, weight: .light)).foregroundStyle(Palette.accent)
+            VStack(alignment: .leading, spacing: 0) {
                 if let host = selected {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(host.name).font(.system(size: 28, weight: .semibold))
-                        Text("\(host.username)@\(host.address):\(String(host.port))").font(.system(size: 14, design: .monospaced))
-                            .foregroundStyle(Palette.secondary).textSelection(.enabled)
-                    }
-                    HStack(spacing: 12) {
-                        Button { connect(host) } label: { Label("Connect", systemImage: "terminal") }
-                            .buttonStyle(HarborActionStyle())
-                        Button("Edit host") { editor = host }.buttonStyle(.bordered).controlSize(.large)
-                    }
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Connection").font(.system(size: 15, weight: .semibold)).padding(.bottom, 4)
+                        detailRow("Hostname", host.address)
+                        detailRow("Username", host.username)
+                        detailRow("Port", String(host.port))
                         detailRow("Authentication", host.auth.label)
-                        detailRow("Server identity", host.knownHosts.isEmpty ? "Verify before connecting" : "Trusted server key")
                         if !host.group.isEmpty { detailRow("Group", host.group) }
-                        if !host.notes.isEmpty { detailRow("Notes", host.notes) }
-                    }.padding(.top, 8)
+                    }
+                    Divider().padding(.vertical, 22)
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Server identity").font(.system(size: 15, weight: .semibold))
+                            Spacer()
+                            Button("Verify…") { inspect(host) }.font(.system(size: 13))
+                        }
+                        if let fingerprint = fingerprint(host) {
+                            Text("Approved fingerprint").font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                            Text(fingerprint).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                        } else {
+                            Text("Not verified. Connect to review the server fingerprint.")
+                                .font(.system(size: 13)).foregroundStyle(Palette.secondary)
+                        }
+                    }
+                    if !host.notes.isEmpty {
+                        Divider().padding(.vertical, 22)
+                        Text("Notes").font(.system(size: 15, weight: .semibold)).padding(.bottom, 10)
+                        Text(host.notes).font(.system(size: 13)).textSelection(.enabled)
+                    }
                 } else if store.library.hosts.isEmpty {
-                    Text("Add your first host").font(.system(size: 28, weight: .semibold))
-                    Text("Enter a server address and username, then choose how to authenticate. You can connect as soon as it is saved.")
-                        .font(.system(size: 14)).foregroundStyle(Palette.secondary).frame(maxWidth: 440, alignment: .leading)
+                    Text("No hosts yet").font(.system(size: 19, weight: .semibold)).padding(.bottom, 8)
+                    Text("Add an SSH host to get started.").font(.system(size: 13)).foregroundStyle(Palette.secondary).padding(.bottom, 18)
                     Button("Add host") { editor = Host(auth: .none) }.buttonStyle(HarborActionStyle())
                 } else {
-                    Text("Choose a host").font(.system(size: 28, weight: .semibold))
-                    Text("Select a host in the sidebar to see its connection details.")
-                        .font(.system(size: 14)).foregroundStyle(Palette.secondary)
+                    Text("Select a host").font(.system(size: 19, weight: .semibold)).padding(.bottom, 8)
+                    Text("Choose a host from the sidebar to see its details.")
+                        .font(.system(size: 13)).foregroundStyle(Palette.secondary)
                 }
-            }.padding(48).frame(maxWidth: .infinity, alignment: .leading)
+            }.frame(maxWidth: 620, alignment: .leading).padding(24)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func detailRow(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 20) {
-            Text(label).foregroundStyle(Palette.secondary).frame(width: 130, alignment: .leading)
-            Text(value).textSelection(.enabled).frame(maxWidth: 450, alignment: .leading)
-        }.font(.system(size: 14))
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label).foregroundStyle(Palette.secondary).frame(width: 118, alignment: .leading)
+            Text(value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+        }.font(.system(size: 13))
+    }
+
+    private func fingerprint(_ host: Host) -> String? {
+        guard let line = host.knownHosts.split(whereSeparator: \.isNewline).first(where: { !$0.hasPrefix("#") }),
+              let encoded = line.split(separator: " ").dropFirst(2).first,
+              let key = Data(base64Encoded: String(encoded)) else { return nil }
+        return "SHA256:" + Data(SHA256.hash(data: key)).base64EncodedString().replacingOccurrences(of: "=", with: "")
     }
 
     private func connect(_ host: Host) {
@@ -293,15 +327,15 @@ struct SessionTab: View {
     let select: () -> Void
     let close: () -> Void
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 9) {
             Button(action: select) {
-                HStack(spacing: 8) {
-                    Circle().fill(session.status == "Session open" ? Palette.accent : Color.secondary).frame(width: 6, height: 6)
+                HStack(spacing: 6) {
+                    Circle().fill(session.status == "Session open" ? Palette.accent : Color.secondary).frame(width: 5, height: 5)
                     Text(session.host.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
                 }
             }.buttonStyle(.plain)
             Button(action: close) { Image(systemName: "xmark").font(.system(size: 10)) }.buttonStyle(.plain).accessibilityLabel("Close \(session.host.name) session")
-        }.padding(.horizontal, 16).frame(height: 43).background(active ? Palette.canvas : Palette.sidebar)
+        }.padding(.horizontal, 12).frame(height: 35).background(active ? Palette.canvas : Palette.sidebar)
             .overlay(alignment: .bottom) { if active { Rectangle().fill(Palette.accent).frame(height: 2) } }.help(session.status)
     }
 }
@@ -314,12 +348,10 @@ struct SessionWorkspace: View {
     let cancel: () -> Void
 
     var body: some View {
-        ZStack {
-            TerminalSurface(session: session, active: active && session.lastMilestone == .ready)
-                .opacity(session.lastMilestone == .ready ? 1 : 0)
-                .allowsHitTesting(session.lastMilestone == .ready)
-                .accessibilityHidden(session.lastMilestone != .ready)
-            if session.lastMilestone != .ready {
+        Group {
+            if session.phase == .ready {
+                TerminalSurface(session: session, active: active)
+            } else {
                 ConnectionProgressView(session: session, retry: retry, edit: edit, cancel: cancel)
             }
         }
@@ -338,11 +370,8 @@ struct ConnectionProgressView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                Image(systemName: session.phase == .failed ? "exclamationmark.circle" : "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 35, weight: .light)).foregroundStyle(Palette.accent)
-                    .padding(.bottom, 20)
-                Text(session.phase == .failed ? "Connection failed" : session.phase == .ended ? "Session ended" : "Connecting to \(session.host.name)")
-                    .font(.system(size: 28, weight: .semibold)).padding(.bottom, 8)
+                Text(session.phase == .failed ? "Connection failed" : session.phase == .ended ? "Session ended" : "Connecting")
+                    .font(.system(size: 20, weight: .semibold)).padding(.bottom, 8)
                 Text("\(session.host.username)@\(session.host.address):\(String(session.host.port))")
                     .font(.system(size: 13, design: .monospaced)).foregroundStyle(Palette.secondary)
                     .textSelection(.enabled).padding(.bottom, 28)

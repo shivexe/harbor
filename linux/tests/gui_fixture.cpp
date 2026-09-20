@@ -11,6 +11,9 @@
 #include <QTimer>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLineEdit>
 #include <iostream>
 int main(int argc, char **argv) {
     QApplication application(argc, argv);
@@ -22,6 +25,7 @@ int main(int argc, char **argv) {
     QFile fixture(argv[1]);
     if (!fixture.open(QIODevice::ReadOnly)) return 1;
     const auto hosts = QJsonDocument::fromJson(fixture.readAll()).array();
+    if (hosts.size() != 4 || !validatePrivateKey(hosts[1].toObject().value("privateKey").toString().toUtf8()).isEmpty() || !validatePrivateKey(hosts[2].toObject().value("privateKey").toString().toUtf8()).isEmpty()) return 1;
     for (const auto &host : hosts) vault.upsert(host.toObject());
     Window window(vault);
     window.show();
@@ -99,10 +103,51 @@ int main(int argc, char **argv) {
         const bool wrongKeyRejected = reason && reason->text().contains("saved server key does not match") && !rejected->connected();
         if (!wrongKeyRejected) passed = false;
         std::cout << "changed-key rejected=" << wrongKeyRejected << '\n';
+        const int sessionCount = tabs->count();
+        tabs->setCurrentIndex(2);
+        auto item = tree->topLevelItem(0)->child(1);
+        tree->setCurrentItem(item);
+        const bool differentHostShowsDetails = tabs->currentIndex() == 0 && tabs->count() == sessionCount;
+        tabs->setCurrentIndex(2);
+        tree->itemClicked(item, 0);
+        const bool sameHostShowsDetails = tabs->currentIndex() == 0 && tabs->count() == sessionCount;
+        if (!differentHostShowsDetails || !sameHostShowsDetails) passed = false;
+        std::cout << "host selection keeps sessions=" << (differentHostShowsDetails && sameHostShowsDetails) << '\n';
         tabs->setCurrentIndex(3);
         if (passed) terminals[2]->sendText("clear; printf 'Harbor integration lab\\n\\nEncrypted private key authenticated.\\nPassword, key, and Tailscale-style no-auth sessions verified.\\nHost key changes refused before authentication.\\nANSI color and Unicode: ✓\\n\\n'; stty size\n");
         if (!passed) for (int i = 0; i < outputs.size(); ++i) std::cerr << "session " << i << ": " << outputs[i].toStdString() << '\n';
-        QTimer::singleShot(500, &window, [&, passed] { window.grab().save(QString(argv[2])); application.exit(passed ? 0 : 1); });
+        QTimer::singleShot(500, &window, [&, passed] {
+            window.grab().save(QString(argv[2]));
+            if (!passed) { application.exit(1); return; }
+            const int count = tabs->count();
+            tabs->setCurrentIndex(1);
+            terminals[0]->sendText("sh\n");
+            QTimer::singleShot(400, &window, [&, count] {
+                terminals[0]->sendText("exit\n");
+                QTimer::singleShot(400, &window, [&, count] {
+                    const bool subshellKeptTab = tabs->count() == count && terminals[0]->isVisible();
+                    terminals[0]->sendText("exit\n");
+                    QTimer::singleShot(900, &window, [&, count, subshellKeptTab] {
+                        const bool remoteExitClosedTab = tabs->count() == count - 1;
+                        std::cout << "subshell kept tab=" << subshellKeptTab << " remote exit closed tab=" << remoteExitClosedTab << '\n';
+                        auto lock = window.findChild<QPushButton *>("lockButton");
+                        if (!lock) { application.exit(1); return; }
+                        QTimer::singleShot(80, &window, [&] {
+                            auto dialog = window.findChild<QDialog *>("vaultDialog");
+                            auto passphrase = dialog ? dialog->findChild<QLineEdit *>() : nullptr;
+                            auto buttons = dialog ? dialog->findChild<QDialogButtonBox *>() : nullptr;
+                            if (!passphrase || !buttons) { if (dialog) dialog->reject(); return; }
+                            passphrase->setText("disposable GUI test passphrase");
+                            buttons->button(QDialogButtonBox::Ok)->click();
+                        });
+                        lock->click();
+                        const bool lockClosedSessions = tabs->count() == 1 && vault.unlocked();
+                        std::cout << "lock closed sessions=" << lockClosedSessions << '\n';
+                        application.exit(subshellKeptTab && remoteExitClosedTab && lockClosedSessions ? 0 : 1);
+                    });
+                });
+            });
+        });
     });
     return application.exec();
 }

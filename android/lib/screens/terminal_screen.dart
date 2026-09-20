@@ -40,18 +40,35 @@ class _TerminalScreenState extends State<TerminalScreen> {
   void initState() {
     super.initState();
     current = widget.connection;
+    current.activeViews++;
     current.addListener(changed);
     if (!current.started) unawaited(current.connect());
   }
 
   void changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    if (current.normalExit && !cancelled) {
+      cancelled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final route = ModalRoute.of(context);
+        final navigator = Navigator.of(context);
+        if (route?.isCurrent == true) {
+          navigator.pop(true);
+        } else if (route?.isActive == true) {
+          navigator.removeRoute(route!);
+        }
+      });
+    } else {
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
     cancelled = true;
     current.removeListener(changed);
+    current.activeViews--;
     if (current.closed) current.dispose();
     focus.dispose();
     controller.dispose();
@@ -103,11 +120,13 @@ class _TerminalScreenState extends State<TerminalScreen> {
         return;
       }
       current.removeListener(changed);
+      current.activeViews--;
       current.dispose();
       controller.dispose();
       controller = TerminalController();
       setState(() {
         current = next;
+        current.activeViews++;
         retrying = false;
         syncing = false;
       });
@@ -159,10 +178,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
     child: TextButton(
       onPressed: callback,
       style: TextButton.styleFrom(
-        minimumSize: const Size(48, 44),
-        foregroundColor: selected ? canvas : ink,
-        backgroundColor: selected ? action : raised,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        minimumSize: const Size(48, 40),
+        foregroundColor: ink,
+        backgroundColor: selected ? buttonFill : raised,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       ),
       child: Text(
         label,
@@ -176,27 +195,27 @@ class _TerminalScreenState extends State<TerminalScreen> {
       children: [
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
+          padding: const EdgeInsets.fromLTRB(16, 7, 16, 7),
           color: panel,
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Padding(
-                padding: EdgeInsets.only(top: 5),
-                child: Icon(Icons.circle, size: 10, color: Color(0xff8fd7b6)),
-              ),
-              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '${current.host.username}@${current.host.address}:${current.host.port}  ·  Connected',
+                  '${current.host.username}@${current.host.address}:${current.host.port}',
                   style: const TextStyle(
                     color: muted,
-                    fontSize: 14,
+                    fontSize: 13,
                     height: 1.35,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Connected',
+                style: TextStyle(color: muted, fontSize: 13),
               ),
             ],
           ),
@@ -212,7 +231,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
           ),
         ),
         Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: const BoxDecoration(
             color: panel,
             border: Border(top: BorderSide(color: hairline)),
@@ -280,35 +299,26 @@ class _TerminalScreenState extends State<TerminalScreen> {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(minHeight: bounds.maxHeight),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 36, 24, 28),
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          stopped ? Icons.error_outline : Icons.terminal,
-                          size: 40,
-                          color: stopped
-                              ? Theme.of(context).colorScheme.error
-                              : action,
-                        ),
-                        const SizedBox(height: 24),
                         Text(
                           retrying
                               ? syncing
-                                    ? 'Syncing your host.'
-                                    : 'Preparing connection.'
+                                    ? 'Syncing hosts'
+                                    : 'Preparing connection'
                               : stage == ConnectionStage.failed
-                              ? 'Could not connect.'
+                              ? 'Could not connect'
                               : stage == ConnectionStage.disconnected
-                              ? 'Session ended.'
-                              : 'Connecting to ${current.host.name}.',
+                              ? 'Connection closed'
+                              : 'Connecting',
                           style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -.6,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         Text(
                           '${current.host.username}@${current.host.address}:${current.host.port}',
                           style: const TextStyle(
@@ -318,7 +328,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                           ),
                         ),
                         if (!retrying && (stopped || retryError != null)) ...[
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 12),
                           Text(
                             retryError ??
                                 current.problem ??
@@ -331,7 +341,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                           ),
                         ],
                         if (!retrying && current.serverMessage.isNotEmpty) ...[
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 16),
                           const Text(
                             'Server message',
                             style: TextStyle(
@@ -347,7 +357,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                             decoration: BoxDecoration(
                               color: panel,
                               border: Border.all(color: hairline),
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(8),
                             ),
                             child: SelectableText(
                               current.serverMessage,
@@ -359,10 +369,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
                             ),
                           ),
                         ],
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 20),
                         for (var i = 0; i < steps.length; i++)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 18),
+                            padding: const EdgeInsets.only(bottom: 12),
                             child: Row(
                               children: [
                                 SizedBox(
@@ -394,7 +404,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                                       ? const Icon(
                                           Icons.check,
                                           size: 20,
-                                          color: Color(0xff8fd7b6),
+                                          color: Color(0xff70c997),
                                         )
                                       : const CircularProgressIndicator(
                                           strokeWidth: 2,
@@ -428,7 +438,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
           ),
           if (stopped && !retrying)
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -452,7 +462,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
             )
           else if (!retrying)
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton(
@@ -481,7 +491,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: const Color(0xff101217),
+        backgroundColor: canvas,
         appBar: AppBar(
           title: Text(
             current.host.name,

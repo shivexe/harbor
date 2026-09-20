@@ -70,16 +70,19 @@ Terminal::Terminal(const QJsonObject &host, QWidget *parent) : QWidget(parent), 
     content->setSpacing(16);
     heading_ = new QLabel("Connecting to " + host.value("name").toString(), panel);
     heading_->setObjectName("connectionHeading");
+    heading_->setTextFormat(Qt::PlainText);
     heading_->setProperty("heading", true);
     heading_->setWordWrap(true);
     content->addWidget(heading_);
     auto endpoint = new QLabel(host.value("username").toString() + "@" + host.value("hostname").toString() + ":" + QString::number(host.value("port").toInt()), panel);
+    endpoint->setTextFormat(Qt::PlainText);
     endpoint->setProperty("endpoint", true);
     endpoint->setWordWrap(true);
     endpoint->setTextInteractionFlags(Qt::TextSelectableByMouse);
     content->addWidget(endpoint);
     detail_ = new QLabel("Opening a secure SSH session.", panel);
     detail_->setObjectName("connectionDetail");
+    detail_->setTextFormat(Qt::PlainText);
     detail_->setProperty("muted", true);
     detail_->setWordWrap(true);
     detail_->setMaximumWidth(580);
@@ -103,23 +106,23 @@ Terminal::Terminal(const QJsonObject &host, QWidget *parent) : QWidget(parent), 
     progress_->setTextVisible(false);
     progress_->setMaximumWidth(340);
     progress_->setFixedHeight(4);
-    progress_->setStyleSheet("QProgressBar { border: none; border-radius: 2px; background: #343844; } QProgressBar::chunk { background: #a8b8fa; }");
+    progress_->setStyleSheet("QProgressBar { border: none; border-radius: 2px; background: #3a3a3e; } QProgressBar::chunk { background: #0a84ff; }");
     content->addSpacing(12);
     content->addWidget(progress_);
     messageBox_ = new QWidget(panel);
     messageBox_->setObjectName("serverMessageBox");
-    messageBox_->setStyleSheet("QWidget#serverMessageBox { background: #272b35; border: 1px solid #414651; border-radius: 8px; }");
+    messageBox_->setStyleSheet("QWidget#serverMessageBox { background: #303033; border: 1px solid #48484a; border-radius: 8px; }");
     auto messageLayout = new QVBoxLayout(messageBox_);
     messageLayout->setContentsMargins(14, 12, 14, 12);
     auto messageHeading = new QLabel("Server message", messageBox_);
-    messageHeading->setStyleSheet("font-weight: 600; color: #f1f2f6;");
+    messageHeading->setStyleSheet("font-weight: 600; color: #f2f2f2;");
     messageLayout->addWidget(messageHeading);
     message_ = new QLabel(messageBox_);
     message_->setObjectName("connectionServerMessage");
     message_->setTextFormat(Qt::PlainText);
     message_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     message_->setWordWrap(true);
-    message_->setStyleSheet("color: #c6cbda; font-family: monospace;");
+    message_->setStyleSheet("color: #d0d0d4; font-family: monospace;");
     messageLayout->addWidget(message_);
     messageBox_->hide();
     content->addWidget(messageBox_);
@@ -156,8 +159,8 @@ Terminal::Terminal(const QJsonObject &host, QWidget *parent) : QWidget(parent), 
     pages_->addWidget(terminal_);
     pages_->setCurrentIndex(0);
     for (int i = 0; i < 4; ++i) steps_[i]->setText((i == 0 ? "◌  " : "○  ") + names[i]);
-    steps_[0]->setStyleSheet("color: #a8b8fa; font-weight: 600;");
-    for (int i = 1; i < 4; ++i) steps_[i]->setStyleSheet("color: #777d8b;");
+    steps_[0]->setStyleSheet("color: #409cff; font-weight: 600;");
+    for (int i = 1; i < 4; ++i) steps_[i]->setStyleSheet("color: #8e8e93;");
     connect(trust_, &QPushButton::clicked, this, [this] { emit trustRequested(host_.value("hostKey").toString()); });
     connect(retry_, &QPushButton::clicked, this, &Terminal::retryRequested);
     connect(edit_, &QPushButton::clicked, this, &Terminal::editRequested);
@@ -175,6 +178,7 @@ void Terminal::startSsh() {
     const auto auth = host.value("authType").toString();
     auto environment = QProcessEnvironment::systemEnvironment();
     if (auth != "none") {
+        environment.remove("HARBOR_ASKPASS_FD");
         capability_ = randomBytes(32).toBase64();
         password_ = auth == "password" ? host.value("password").toString().toUtf8() : QByteArray();
         passphrase_ = auth == "key" ? host.value("passphrase").toString().toUtf8() : QByteArray();
@@ -219,7 +223,7 @@ void Terminal::startSsh() {
         environment.insert("HARBOR_ASKPASS_CAPABILITY", QString::fromLatin1(capability_));
         environment.insert("DISPLAY", environment.value("DISPLAY", ":0"));
     } else {
-        for (const auto &name : {"SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "HARBOR_ASKPASS_SOCKET", "HARBOR_ASKPASS_CAPABILITY", "SSH_AUTH_SOCK", "SSH_AGENT_PID"}) environment.remove(name);
+        for (const auto &name : {"SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "HARBOR_ASKPASS_FD", "HARBOR_ASKPASS_SOCKET", "HARBOR_ASKPASS_CAPABILITY", "SSH_AUTH_SOCK", "SSH_AGENT_PID"}) environment.remove(name);
     }
     QFile known(temporary_->path() + "/known_hosts");
     const auto pinned = hostKeyName(host).toUtf8() + ' ' + host.value("hostKey").toString().toUtf8() + '\n';
@@ -251,18 +255,17 @@ void Terminal::startSsh() {
     terminal_->setHistorySize(10000);
     connect(terminal_, &QTermWidget::finished, this, [this] {
         readDiagnostics();
-        cleanup();
         if (connected_) {
-            connected_ = false;
-            started_ = false;
-            pages_->setCurrentIndex(0);
-            heading_->setText("Session ended");
-            detail_->setText("The remote shell closed. You can reconnect or edit this host's settings.");
-            progress_->hide();
-            retry_->show();
-            edit_->show();
-            cancel_->setText("Close");
-            emit finished();
+            QFile log(temporary_->path() + "/ssh.log");
+            QByteArray tail;
+            if (log.open(QIODevice::ReadOnly)) { log.seek(qMax<qint64>(0, log.size() - 32768)); tail = log.read(32768); }
+            static const QRegularExpression exitStatus("(?:^|\\n)debug1: Exit status [0-9]+(?:\\r?\\n|$)");
+            if (exitStatus.match(QString::fromUtf8(tail)).hasMatch()) { cleanup(); emit shellEnded(); }
+            else {
+                connected_ = false;
+                messageBox_->hide();
+                showFailure("The SSH connection ended unexpectedly. Check the server and network, then retry.");
+            }
         } else if (!failed_) showFailure(failureReason());
     });
     diagnostics_->start();
@@ -305,7 +308,7 @@ void Terminal::start() {
         host_["hostKey"] = QString::fromLatin1(selected);
         const auto key = QByteArray::fromBase64(selected.split(' ')[1]);
         const auto fingerprint = QCryptographicHash::hash(key, QCryptographicHash::Sha256).toBase64(QByteArray::OmitTrailingEquals);
-        fingerprint_->setText(QString::fromLatin1(selected.split(' ')[0]) + "\nSHA256:" + QString::fromLatin1(fingerprint) + "\n\nCompare this fingerprint with the server administrator before trusting it.");
+        fingerprint_->setText(QString::fromLatin1(selected.split(' ')[0]) + "\nSHA256:\n" + QString::fromLatin1(fingerprint) + "\n\nCompare this fingerprint with the server administrator before trusting it.");
         fingerprint_->show();
         progress_->hide();
         trust_->show();
@@ -331,7 +334,7 @@ void Terminal::setStage(int stage) {
     const QStringList names{"Reaching server", "Verifying server identity", "Signing in", "Opening shell"};
     for (int i = 0; i < 4; ++i) {
         steps_[i]->setText((i < stage ? "✓  " : i == stage ? "◌  " : "○  ") + names[i]);
-        steps_[i]->setStyleSheet(i < stage ? "color: #c8d7ce;" : i == stage ? "color: #a8b8fa; font-weight: 600;" : "color: #777d8b;");
+        steps_[i]->setStyleSheet(i < stage ? "color: #c8d7ce;" : i == stage ? "color: #409cff; font-weight: 600;" : "color: #8e8e93;");
     }
     if (stage == 1) detail_->setText("Server reached. Checking its saved identity.");
     if (stage == 2) detail_->setText("Server identity matches. Signing in.");
@@ -405,7 +408,7 @@ QString Terminal::failureReason() const {
 void Terminal::showFailure(const QString &reason) {
     if (failed_ || connected_) return;
     cancel();
-    heading_->setText("Could not connect");
+    heading_->setText(stage_ == 4 ? "Connection lost" : "Could not connect");
     detail_->setText(reason);
     progress_->hide();
     fingerprint_->hide();
@@ -414,7 +417,7 @@ void Terminal::showFailure(const QString &reason) {
     edit_->show();
     cancel_->setText("Close");
     const QStringList names{"Reaching server", "Verifying server identity", "Signing in", "Opening shell"};
-    if (stage_ < 4) { steps_[stage_]->setText("×  " + names[stage_]); steps_[stage_]->setStyleSheet("color: #f3adad; font-weight: 600;"); }
+    if (stage_ < 4) { steps_[stage_]->setText("×  " + names[stage_]); steps_[stage_]->setStyleSheet("color: #ff9b9b; font-weight: 600;"); }
     emit failed();
 }
 

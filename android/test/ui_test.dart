@@ -119,12 +119,12 @@ void main() {
     await tester.pumpWidget(
       RepaintBoundary(key: key, child: const HarborApp()),
     );
-    await capture(key, 'android-1.1-locked', tester);
+    await capture(key, 'android-1.2-locked', tester);
     await tester.tap(find.text('Unlock Harbor'));
     await tester.pumpAndSettle();
     expect(find.text('Scan QR code'), findsOneWidget);
     expect(find.text('Paste invitation instead'), findsNothing);
-    await capture(key, 'android-1.1-onboarding', tester);
+    await capture(key, 'android-1.2-onboarding', tester);
     await tester.tap(find.text('Scan QR code'));
     await tester.pumpAndSettle();
     expect(find.byType(PairScreen), findsOneWidget);
@@ -189,14 +189,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Production'), findsOneWidget);
     expect(find.text('Orchard primary'), findsOneWidget);
-    expect(find.textContaining('No password'), findsOneWidget);
+    expect(find.text('harbor@10.0.0.12:22'), findsOneWidget);
     expect(find.byIcon(Icons.edit), findsNothing);
     expect(tester.takeException(), isNull);
-    await capture(key, 'android-1.1-hosts', tester);
+    await capture(key, 'android-1.2-hosts', tester);
     await tester.enterText(find.byType(TextField), 'worker');
     await tester.pumpAndSettle();
     expect(find.text('Orchard primary'), findsNothing);
     expect(find.text('Orchard worker'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    unlocked.value = false;
+  });
+
+  testWidgets('long desktop status fits a compact phone with large text', (
+    tester,
+  ) async {
+    phone(tester, size: const Size(320, 568));
+    FlutterSecureStorage.setMockInitialValues({
+      'vault': jsonEncode({
+        'pairing': {
+          'desktopName': 'A very long desktop name with a long location',
+        },
+        'snapshot': {'hosts': [], 'syncedAt': '2024-01-02T00:00:00Z'},
+      }),
+    });
+    unlocked.value = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: harborTheme(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.5)),
+          child: child!,
+        ),
+        home: const HostsScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Search hosts'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     unlocked.value = false;
   });
@@ -224,11 +256,11 @@ void main() {
     await tester.pump();
     expect(find.text('Scan the QR code'), findsOneWidget);
     expect(tester.takeException(), isNull);
-    await capture(key, 'android-1.1-pairing', tester);
+    await capture(key, 'android-1.2-pairing', tester);
     await tester.tap(find.text('Paste invitation instead'));
     await tester.pumpAndSettle();
     expect(find.text('Invitation text'), findsOneWidget);
-    await capture(key, 'android-1.1-paste-fallback', tester);
+    await capture(key, 'android-1.2-paste-fallback', tester);
     await tester.enterText(find.byType(TextField), 'sample invitation');
     await tester.tap(find.text('Continue pairing'));
     await tester.pump();
@@ -237,7 +269,7 @@ void main() {
     expect(service.submitted, 'sample invitation');
     expect(find.text('Approve on your desktop.'), findsOneWidget);
     expect(find.text('123456'), findsOneWidget);
-    await capture(key, 'android-1.1-comparison', tester);
+    await capture(key, 'android-1.2-comparison', tester);
     await tester.pumpWidget(const SizedBox());
     service.pending.complete();
     unlocked.value = false;
@@ -270,12 +302,13 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.text('Paired. Sync needed.'), findsOneWidget);
-    expect(committed, isTrue);
+    expect(committed, isFalse);
     expect(find.text('Retry sync'), findsOneWidget);
     expect(service.attempts, 1);
     await tester.tap(find.text('Retry sync'));
     await tester.pump();
     expect(service.attempts, 2);
+    expect(committed, isTrue);
     await tester.pumpWidget(const SizedBox());
     unlocked.value = false;
   });

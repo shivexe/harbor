@@ -102,60 +102,37 @@ class _SecurityGateState extends State<SecurityGate>
             color: canvas,
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.terminal, color: action, size: 26),
-                        SizedBox(width: 10),
-                        Text(
-                          'Harbor',
-                          style: TextStyle(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
+                    const Text(
+                      'Harbor',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     Expanded(
-                      child: Center(
+                      child: SingleChildScrollView(
                         child: Column(
-                          mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              width: 60,
-                              height: 60,
-                              decoration: BoxDecoration(
-                                color: panel,
-                                border: Border.all(color: hairline),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: const Icon(
-                                Icons.lock_outline,
-                                color: action,
-                                size: 29,
-                              ),
-                            ),
-                            const SizedBox(height: 28),
+                            const SizedBox(height: 44),
                             const Text(
-                              'Your workspace is locked.',
+                              'Harbor is locked',
                               style: TextStyle(
-                                fontSize: 30,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -.7,
-                                height: 1.15,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 8),
                             const Text(
-                              'Use your device screen lock to access your hosts and sessions.',
+                              'Use your device screen lock to open your hosts.',
                               style: TextStyle(
                                 color: muted,
                                 fontSize: 16,
-                                height: 1.4,
+                                height: 1.35,
                               ),
                             ),
                             if (error != null)
@@ -175,10 +152,9 @@ class _SecurityGateState extends State<SecurityGate>
                     ),
                     SizedBox(
                       width: double.infinity,
-                      child: FilledButton.icon(
+                      child: FilledButton(
                         onPressed: authenticating ? null : unlock,
-                        icon: const Icon(Icons.lock_open),
-                        label: const Text('Unlock Harbor'),
+                        child: const Text('Unlock Harbor'),
                       ),
                     ),
                   ],

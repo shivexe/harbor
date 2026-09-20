@@ -7,35 +7,40 @@ struct SharingView: View {
     @ObservedObject var store: LibraryStore
     @ObservedObject var sharing: SharingService
     @State private var revoke: PairedDevice?
-    @State private var optionsOpen = false
+    @State private var networkOptionsOpen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Devices").font(.system(size: 28, weight: .semibold))
-                    Text("Pair Android to receive this Mac’s host library.")
-                        .font(.system(size: 14)).foregroundStyle(Palette.secondary)
+            HStack(spacing: 12) {
+                if networkOptionsOpen {
+                    Button { networkOptionsOpen = false } label: { Label("Back", systemImage: "chevron.left") }
+                        .buttonStyle(.plain).accessibilityLabel("Back to pairing")
                 }
+                Text(networkOptionsOpen ? "Network for pairing" : "Devices")
+                    .font(.system(size: 20, weight: .semibold))
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).controlSize(.large)
-            }.padding(.horizontal, 32).padding(.top, 28).padding(.bottom, 24)
+                if !networkOptionsOpen && sharing.pending == nil {
+                    Button("Network options") { sharing.discoverNetworks(); networkOptionsOpen = true }
+                        .accessibilityLabel("Network options")
+                }
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+            }.padding(.horizontal, 24).frame(height: 52)
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    pairingPanel
-                    DisclosureGroup(isExpanded: $optionsOpen) {
-                        connectionOptions.padding(.top, 16)
-                    } label: {
-                        Text("Connection options").font(.system(size: 14, weight: .medium))
-                    }.tint(Palette.accent)
-                    Divider()
-                    devicesPanel
-                }.padding(32).frame(maxWidth: .infinity, alignment: .leading)
+            if networkOptionsOpen && sharing.pending == nil {
+                networkOptionsPanel
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        pairingPanel
+                        Divider()
+                        devicesPanel
+                    }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
-        }.frame(width: 720, height: 650).background(Palette.sidebar)
+        }.frame(width: 720, height: 650).background(Palette.canvas)
             .tint(Palette.accent).foregroundStyle(Palette.text)
             .onAppear { sharing.discoverNetworks() }
+            .onChange(of: sharing.pending?.id) { _, pending in if pending != nil { networkOptionsOpen = false } }
             .confirmationDialog("Revoke \(revoke?.name ?? "device")?", isPresented: Binding(get: { revoke != nil }, set: { if !$0 { revoke = nil } }), titleVisibility: .visible) {
                 Button("Revoke device", role: .destructive) { if let device = revoke { sharing.revoke(device) }; revoke = nil }
             } message: { Text("This blocks future sync. Rotate server credentials to remove SSH access already stored on the phone.") }
@@ -51,13 +56,13 @@ struct SharingView: View {
         } else if let result = sharing.pairingResult, sharing.approvedPairing {
             VStack(alignment: .leading, spacing: 16) {
                 Image(systemName: "checkmark.circle.fill").font(.system(size: 36)).foregroundStyle(.green)
-                Text("Android paired").font(.system(size: 22, weight: .semibold))
+                Text("Android paired").font(.system(size: 18, weight: .semibold))
                 Text(result).font(.system(size: 14)).foregroundStyle(Palette.secondary)
                 Button("Pair another device") { sharing.inviteAutomatically() }.buttonStyle(HarborActionStyle())
             }.frame(maxWidth: .infinity, minHeight: 280, alignment: .leading)
         } else if let pending = sharing.pending, sharing.pairingResult == nil {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Compare the codes").font(.system(size: 22, weight: .semibold))
+                Text("Compare the codes").font(.system(size: 18, weight: .semibold))
                 Text("\(pending.name) wants to pair. Confirm the same code appears on Android.")
                     .font(.system(size: 14)).foregroundStyle(Palette.secondary)
                 Text(pending.code).font(.system(size: 48, weight: .medium, design: .monospaced))
@@ -70,13 +75,13 @@ struct SharingView: View {
             }.frame(maxWidth: .infinity, minHeight: 280, alignment: .leading)
         } else if sharing.pairingResult != nil {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Pairing request denied").font(.system(size: 22, weight: .semibold))
+                Text("Pairing request denied").font(.system(size: 18, weight: .semibold))
                 Text("Generate a new code to try again.").font(.system(size: 14)).foregroundStyle(Palette.secondary)
                 Button("Generate new code") { sharing.inviteAutomatically() }.buttonStyle(HarborActionStyle())
             }.frame(maxWidth: .infinity, minHeight: 280, alignment: .leading)
         } else if let invitation = sharing.invitation {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Scan with Harbor on Android").font(.system(size: 22, weight: .semibold))
+                Text("Scan with Harbor on Android").font(.system(size: 18, weight: .semibold))
                 HStack(alignment: .top, spacing: 24) {
                     if let image = qr(sharing.invitationText) {
                         Image(nsImage: image).interpolation(.none).resizable().aspectRatio(contentMode: .fit)
@@ -92,27 +97,31 @@ struct SharingView: View {
                         Text("Expires \(Date(timeIntervalSince1970: TimeInterval(invitation.expiresAt)), style: .relative)")
                             .font(.system(size: 12)).foregroundStyle(Palette.secondary)
                         Button("Cancel code") { sharing.cancelInvitation() }.controlSize(.large)
+                        Button("Copy pairing details") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(sharing.invitationText, forType: .string)
+                        }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
         } else if sharing.invitationExpired {
             VStack(alignment: .leading, spacing: 16) {
                 Image(systemName: "clock.badge.exclamationmark").font(.system(size: 32)).foregroundStyle(Palette.accent)
-                Text("Pairing code expired").font(.system(size: 22, weight: .semibold))
+                Text("Pairing code expired").font(.system(size: 18, weight: .semibold))
                 Text("Generate a new one to continue pairing.").font(.system(size: 14)).foregroundStyle(Palette.secondary)
                 Button("Generate new code") { sharing.inviteAutomatically() }.buttonStyle(HarborActionStyle())
             }.frame(maxWidth: .infinity, minHeight: 280, alignment: .leading)
         } else if let error = sharing.error {
             VStack(alignment: .leading, spacing: 16) {
                 Image(systemName: "wifi.exclamationmark").font(.system(size: 32)).foregroundStyle(Palette.accent)
-                Text("Pairing could not start").font(.system(size: 22, weight: .semibold))
+                Text("Pairing could not start").font(.system(size: 18, weight: .semibold))
                 Text(error).font(.system(size: 14)).foregroundStyle(Palette.secondary)
                 Button("Retry") { sharing.inviteAutomatically() }.buttonStyle(HarborActionStyle())
             }.frame(maxWidth: .infinity, minHeight: 280, alignment: .leading)
         } else {
             VStack(alignment: .leading, spacing: 16) {
                 Image(systemName: "qrcode").font(.system(size: 36)).foregroundStyle(Palette.accent)
-                Text("Pair your Android device").font(.system(size: 22, weight: .semibold))
+                Text("Pair your Android device").font(.system(size: 18, weight: .semibold))
                 Text("Scan a one-time code with Harbor on Android. You’ll compare a short code before approving.")
                     .font(.system(size: 14)).foregroundStyle(Palette.secondary)
                     .frame(maxWidth: 430, alignment: .leading)
@@ -124,44 +133,46 @@ struct SharingView: View {
         }
     }
 
-    private var connectionOptions: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if sharing.networks.isEmpty {
-                Text("No local network available. Connect to Wi-Fi, Ethernet or a private VPN.")
-                    .font(.system(size: 14)).foregroundStyle(Palette.secondary)
-                Button("Check again") { sharing.discoverNetworks() }.controlSize(.large)
-            } else {
-                Text("Network for pairing").font(.system(size: 14, weight: .medium))
-                Picker("Network for pairing", selection: Binding(get: { sharing.address }, set: { sharing.selectNetwork($0) })) {
-                    if sharing.address.isEmpty { Text("Choose a network").tag("") }
-                    ForEach(sharing.networks) { network in
-                        Text("\(network.name) · \(network.address)").tag(network.address)
+    private var networkOptionsPanel: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Choose the network your phone can reach. Changing networks creates a new pairing code.")
+                    .font(.system(size: 13)).foregroundStyle(Palette.secondary)
+                if sharing.networks.isEmpty {
+                    Text("No local network available. Connect to Wi-Fi, Ethernet or a private VPN.")
+                        .font(.system(size: 13)).foregroundStyle(Palette.secondary)
+                    Button("Check again") { sharing.discoverNetworks() }
+                } else {
+                    VStack(spacing: 1) {
+                        ForEach(sharing.networks) { network in
+                            Button {
+                                sharing.selectNetwork(network.address)
+                                networkOptionsOpen = false
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: sharing.address == network.address ? "largecircle.fill.circle" : "circle")
+                                        .foregroundStyle(sharing.address == network.address ? Palette.accent : Palette.secondary)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(network.name).font(.system(size: 14, weight: .medium))
+                                        Text(network.address).font(.system(size: 12, design: .monospaced))
+                                            .foregroundStyle(Palette.secondary)
+                                    }
+                                    Spacer()
+                                }.frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+                                    .padding(.horizontal, 12).contentShape(Rectangle())
+                            }.buttonStyle(.plain).background(Palette.raised, in: RoundedRectangle(cornerRadius: 6))
+                                .accessibilityLabel("\(network.name), \(network.address)")
+                        }
                     }
-                }.labelsHidden().frame(maxWidth: 420, alignment: .leading)
-                    .disabled(sharing.pending != nil)
-                Text("Choose the network your phone can reach. Changing it generates a new code.")
-                    .font(.system(size: 12)).foregroundStyle(Palette.secondary)
-            }
-            if sharing.invitation != nil {
-                Button("Copy pairing details") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(sharing.invitationText, forType: .string)
-                }.controlSize(.large)
-            }
-            if !store.library.devices.isEmpty {
-                Toggle("Allow paired devices to sync", isOn: Binding(
-                    get: { sharing.enabled },
-                    set: { if $0 { sharing.enableSync() } else { sharing.stop() } }
-                )).toggleStyle(.switch).font(.system(size: 14))
-            }
-            Text(sharing.enabled ? "Sync is available while Harbor is unlocked and open." : "Sync is currently stopped.")
-                .font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                    Button("Check again") { sharing.discoverNetworks() }.padding(.top, 4)
+                }
+            }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private var devicesPanel: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Paired devices").font(.system(size: 18, weight: .semibold))
+            Text("Paired devices").font(.system(size: 16, weight: .semibold))
             if store.library.devices.isEmpty {
                 Text("No devices paired yet.").font(.system(size: 14)).foregroundStyle(Palette.secondary)
             } else {
@@ -177,6 +188,15 @@ struct SharingView: View {
                         Button("Revoke") { revoke = device }.controlSize(.large)
                     }.padding(.vertical, 8)
                 }
+            }
+            if !store.library.devices.isEmpty {
+                Divider()
+                Toggle("Allow paired devices to sync", isOn: Binding(
+                    get: { sharing.enabled },
+                    set: { if $0 { sharing.enableSync() } else { sharing.stop() } }
+                )).toggleStyle(.switch).font(.system(size: 13))
+                Text(sharing.enabled ? "Sync is available while Harbor is unlocked and open." : "Sync is currently stopped.")
+                    .font(.system(size: 12)).foregroundStyle(Palette.secondary)
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }

@@ -1,5 +1,17 @@
 # Harbor progress
 
+## Version 1.2.0: UX revision and encrypted keys
+
+Completed a cross-platform UI revision with compact charcoal surfaces, platform typography, aligned host details and revised host, pairing and session flows. More options and pairing Network options are usable at compact sizes. Direct private-key paste complements file import. Normal remote shell exit removes its session; transport failures retain recovery. Android replacement pairing preserves the previous library until the new first sync succeeds.
+
+Passphrase-encrypted OpenSSH and common encrypted PEM keys are supported. Desktop save validation runs away from the UI and preserves drafts on errors, cancellation or vault lock. The encrypted key text remains intact in encrypted storage and sync. Android adds a bounded in-memory PEM adapter. See [ENCRYPTED-KEYS.md](ENCRYPTED-KEYS.md) for exact formats and limits.
+
+Root researched Reddit, native SSH clients, design practitioners and Linear's process, then reviewed visuals and evidence. Direct X posts were inaccessible and were not treated as verified sources. All application implementation was delegated to Sol 5.6 high. The research is in [UX-REVAMP.md](UX-REVAMP.md); executed workflows and limitations are in [UX-VALIDATION.md](UX-VALIDATION.md).
+
+Validation includes Android's 30-test encrypted-key suite and eight focused final compatibility tests, Mac's final 29-case suite with nine opt-in skips and no failures, Linux security/editor/UI/real-terminal checks, real encrypted-key authentication and independent protocol checks. The newly signed Mac helper still requires fresh interactive Keychain approval for a new app-integrated encrypted-PEM fixture; native direct encrypted-PKCS#8 SSH passed. Physical Android camera decoding remains unverified, although scanner permissions/init, paste pairing, encrypted sync and independently decoded desktop QR images passed.
+
+Versioned builds are `Harbor-1.2.0.app` on the Mac, `harbor-1.2.0-android.apk` in its Downloads, and installers/source/checksums in `artifacts/`. Quit the old Mac app before opening the staged version. Existing app copies, owner sessions and vaults are preserved. The local Mac build is ad hoc signed, not notarized.
+
 ## Version 1.1.2: connection progress and host-key path fix
 
 The reported ED25519 strict-checking failure was reproduced with a correctly approved key under a directory containing spaces. OpenSSH's `UserKnownHostsFile` value is now quoted correctly; strict checking and saved trust remain enabled. All three clients show connection steps and reveal the terminal only after shell acceptance, with visible recovery controls. Desktop Retry reads current host settings; Android retains read-only configuration and can sync before retry. Tailscale-style sign-in banners remain visible without controlling progress.

@@ -70,6 +70,7 @@ enum ConnectionPhase: Int {
 struct SSHDiagnosticParser {
     private(set) var phase = ConnectionPhase.connecting
     private(set) var failureHint: String?
+    private(set) var remoteExitStatus = false
 
     mutating func consume(_ line: String) {
         let line = line.trimmingCharacters(in: .newlines)
@@ -77,6 +78,9 @@ struct SSHDiagnosticParser {
         if line.hasPrefix("debug1: Host '") && line.contains(" is known and matches the ") && line.hasSuffix(" host key."), phase == .verifying { phase = .authenticating }
         if line.hasPrefix("Authenticated to ") && line.contains(" using \""), phase == .authenticating { phase = .openingShell }
         if line.hasPrefix("debug2: shell request accepted on channel "), phase == .openingShell { phase = .ready }
+        if line.hasPrefix("debug1: Exit status "),
+           let status = Int(line.dropFirst("debug1: Exit status ".count)),
+           (0...255).contains(status) { remoteExitStatus = true }
         if line.contains("REMOTE HOST IDENTIFICATION HAS CHANGED") || line.contains("Host key verification failed") || line.contains(" host key is known for ") {
             failureHint = "The server key could not be verified. Check the saved fingerprint before trying again."
         } else if line.contains("Permission denied") {
@@ -99,6 +103,7 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
     private let bridge: TerminalBridge
     @Published private(set) var phase = ConnectionPhase.connecting
     @Published private(set) var failure: String?
+    var onFinished: ((TerminalSession) -> Void)?
     var status: String { phase.title }
     var lastMilestone: ConnectionPhase { diagnostics.phase }
     private let directory: URL
@@ -168,8 +173,8 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
             terminal.processDelegate = self
             terminal.terminalDelegate = bridge
             terminal.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-            terminal.nativeBackgroundColor = NSColor(srgbRed: 23.0 / 255, green: 25.0 / 255, blue: 31.0 / 255, alpha: 1)
-            terminal.nativeForegroundColor = NSColor(srgbRed: 241.0 / 255, green: 242.0 / 255, blue: 246.0 / 255, alpha: 1)
+            terminal.nativeBackgroundColor = NSColor(srgbRed: 36.0 / 255, green: 36.0 / 255, blue: 38.0 / 255, alpha: 1)
+            terminal.nativeForegroundColor = NSColor(srgbRed: 242.0 / 255, green: 242.0 / 255, blue: 242.0 / 255, alpha: 1)
             terminal.startProcess(executable: "/usr/bin/ssh", args: arguments, environment: environment.map { "\($0.key)=\($0.value)" })
             guard terminal.process.running else { throw HarborError.message("OpenSSH could not start. Close unused sessions and try again.") }
             let work = DispatchWorkItem { [weak self] in
@@ -259,10 +264,19 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
     func processTerminated(source: TerminalView, exitCode: Int32?) {
         guard !cleaned else { return }
         readDiagnostics()
-        if phase != .ready && phase != .failed {
+        if phase == .ready && (exitCode == 0 || diagnostics.remoteExitStatus) {
+            phase = .ended
+            cleanup()
+            onFinished?(self)
+            return
+        }
+        if phase == .ready {
+            failure = "The SSH connection closed unexpectedly. Check the network and retry."
+            phase = .failed
+        } else if phase != .failed {
             failure = diagnostics.failureHint ?? "SSH ended before opening a shell. Check the host configuration and try again."
             phase = .failed
-        } else if phase == .ready { phase = .ended }
+        }
         cleanup()
     }
 }

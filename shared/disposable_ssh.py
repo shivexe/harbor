@@ -14,11 +14,12 @@ import asyncssh
 
 
 class Server(asyncssh.SSHServer):
-    def __init__(self, public_key, banner=None, reject_shell=False, auth_delay=0):
-        self.public_key = public_key
+    def __init__(self, public_keys, banner=None, reject_shell=False, auth_delay=0, disconnect_after=0):
+        self.public_keys = public_keys
         self.banner = banner
         self.reject_shell = reject_shell
         self.auth_delay = auth_delay
+        self.disconnect_after = disconnect_after
 
     def connection_made(self, connection):
         self.connection = connection
@@ -40,15 +41,17 @@ class Server(asyncssh.SSHServer):
         return username == "harbor" and password == "fixture-password"
 
     def validate_public_key(self, username, key):
-        return username == "harbor" and key == self.public_key
+        return username == "harbor" and key in self.public_keys
 
     def session_requested(self):
-        return Session(self.reject_shell)
+        return Session(self.reject_shell, self.connection, self.disconnect_after)
 
 
 class Session(asyncssh.SSHServerSession):
-    def __init__(self, reject_shell=False):
+    def __init__(self, reject_shell=False, connection=None, disconnect_after=0):
         self.reject_shell = reject_shell
+        self.connection = connection
+        self.disconnect_after = disconnect_after
 
     def connection_made(self, channel):
         self.channel = channel
@@ -88,6 +91,8 @@ class Session(asyncssh.SSHServerSession):
         self.exec_process = None
 
     def session_started(self):
+        if self.disconnect_after:
+            asyncio.get_running_loop().call_later(self.disconnect_after, self.connection.abort)
         if self.command is not None and not self.pty:
             asyncio.create_task(self.execute())
             return
@@ -158,11 +163,14 @@ async def run(args):
         return key
     host_key = fixture_key("server.key", "ssh-rsa" if args.host_key_type == "rsa" else "ssh-ed25519")
     client_key = fixture_key("client.key")
+    public_keys = [client_key.convert_to_public()]
+    for path in args.authorized_key:
+        public_keys.append(asyncssh.read_public_key(path))
     previous = directory / "hosts.json"
     old_ids = {host["name"]: host["id"] for host in json.loads(previous.read_text())} if previous.exists() else {}
     plain_key = client_key.export_private_key("openssh").decode()
     encrypted_key = client_key.export_private_key("openssh", passphrase="fixture-key-passphrase").decode()
-    server = await asyncssh.create_server(lambda: Server(client_key.convert_to_public(), args.auth_banner, args.reject_shell, args.auth_delay), "127.0.0.1", args.port, server_host_keys=[host_key], line_editor=False)
+    server = await asyncssh.create_server(lambda: Server(public_keys, args.auth_banner, args.reject_shell, args.auth_delay, args.disconnect_after), "127.0.0.1", args.port, server_host_keys=[host_key], line_editor=False)
     port = server.get_port()
     public_key = host_key.export_public_key("openssh").decode().strip().split(" ")[:2]
     pinned = " ".join(public_key)
@@ -191,5 +199,7 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--auth-banner")
     parser.add_argument("--auth-delay", type=float, default=0)
+    parser.add_argument("--disconnect-after", type=float, default=0)
+    parser.add_argument("--authorized-key", action="append", default=[])
     parser.add_argument("--reject-shell", action="store_true")
     asyncio.run(run(parser.parse_args()))

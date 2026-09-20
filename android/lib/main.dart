@@ -68,6 +68,8 @@ class _HostsScreenState extends State<HostsScreen> {
           hosts = [];
           desktop = null;
           lastSync = null;
+          error = null;
+          busy = false;
         });
       }
     }
@@ -90,7 +92,7 @@ class _HostsScreenState extends State<HostsScreen> {
         });
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && unlocked.value) {
         setState(() {
           error = 'Secure storage could not be opened. Try restarting Harbor.';
           busy = false;
@@ -110,8 +112,17 @@ class _HostsScreenState extends State<HostsScreen> {
         vault,
       ).sync(cancelled: () => !mounted || !unlocked.value);
       await load();
+    } on StateError catch (failure) {
+      if (mounted && unlocked.value) {
+        setState(() {
+          error = failure.message == 'Device revoked on desktop'
+              ? 'This device was unpaired on your desktop. Use Switch desktop to pair again. Saved hosts remain available.'
+              : 'Sync failed. Open Harbor on your paired desktop and check the network.';
+          busy = false;
+        });
+      }
     } catch (_) {
-      if (mounted) {
+      if (mounted && unlocked.value) {
         setState(() {
           error =
               'Sync failed. Open Harbor on your paired desktop and check the network.';
@@ -123,10 +134,33 @@ class _HostsScreenState extends State<HostsScreen> {
 
   Future<void> pair() async {
     if (busy) return;
+    if (desktop != null) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Switch desktop?'),
+          content: const Text(
+            'Your current hosts stay available until the new desktop pairs and finishes its first sync.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+    }
     setState(() => busy = true);
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => PairScreen(
+          replacing: desktop != null,
           onPaired: () {
             if (!mounted) return;
             for (final session in sessions) {
@@ -143,8 +177,16 @@ class _HostsScreenState extends State<HostsScreen> {
 
   void open(Host host) {
     final connection = Connection(host);
+    watchSession(connection);
     setState(() => sessions.add(connection));
     unawaited(terminal(connection));
+  }
+
+  void watchSession(Connection connection) {
+    connection.onNormalExit = (finished) {
+      if (mounted) setState(() => sessions.remove(finished));
+      if (finished.activeViews == 0) finished.dispose();
+    };
   }
 
   Future<void> terminal(Connection connection) async {
@@ -162,6 +204,7 @@ class _HostsScreenState extends State<HostsScreen> {
             }
             final index = sessions.indexOf(previous);
             if (index < 0) throw StateError('Session closed');
+            watchSession(fresh);
             setState(() => sessions[index] = fresh);
           },
         ),
@@ -173,7 +216,10 @@ class _HostsScreenState extends State<HostsScreen> {
 
   Future<void> forget() async {
     if (busy) return;
-    setState(() => busy = true);
+    setState(() {
+      busy = true;
+      error = null;
+    });
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -197,10 +243,21 @@ class _HostsScreenState extends State<HostsScreen> {
       if (mounted) setState(() => busy = false);
       return;
     }
+    try {
+      await vault.clear();
+    } catch (_) {
+      if (mounted && unlocked.value) {
+        setState(() {
+          busy = false;
+          error =
+              'Could not remove this device. Check secure storage and try again.';
+        });
+      }
+      return;
+    }
     for (final session in sessions) {
       session.dispose();
     }
-    await vault.clear();
     if (!mounted) return;
     setState(() {
       sessions.clear();
@@ -257,36 +314,20 @@ class _HostsScreenState extends State<HostsScreen> {
 
   Widget onboarding() => SingleChildScrollView(
     child: Padding(
-      padding: const EdgeInsets.fromLTRB(24, 52, 24, 32),
+      padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: panel,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: hairline),
-            ),
-            child: const Icon(Icons.qr_code_2, color: action, size: 34),
-          ),
-          const SizedBox(height: 32),
           const Text(
-            'Your hosts,\nwithin reach.',
-            style: TextStyle(
-              fontSize: 34,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -1,
-              height: 1.13,
-            ),
+            'Connect to your hosts',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           const Text(
-            'Scan the QR code in Harbor on your desktop to bring your host collection here.',
-            style: TextStyle(color: muted, fontSize: 16, height: 1.45),
+            'Pair with Harbor on your desktop to sync your hosts securely.',
+            style: TextStyle(color: muted, fontSize: 16, height: 1.4),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
@@ -295,10 +336,10 @@ class _HostsScreenState extends State<HostsScreen> {
               label: const Text('Scan QR code'),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           const Text(
-            'On your desktop, open Devices and choose Pair Android.',
-            style: TextStyle(color: muted, fontSize: 14, height: 1.4),
+            'On your desktop, open Devices, then Pair Android.',
+            style: TextStyle(color: muted, fontSize: 14, height: 1.35),
           ),
         ],
       ),
@@ -309,7 +350,7 @@ class _HostsScreenState extends State<HostsScreen> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 10),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
         child: Row(
           children: [
             const Text(
@@ -325,45 +366,63 @@ class _HostsScreenState extends State<HostsScreen> {
         ),
       ),
       SizedBox(
-        height: 78,
+        height: 64,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           itemCount: sessions.length,
           separatorBuilder: (_, _) => const SizedBox(width: 8),
           itemBuilder: (context, index) {
             final session = sessions[index];
             return Material(
               color: raised,
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(8),
               child: InkWell(
-                borderRadius: BorderRadius.circular(9),
+                borderRadius: BorderRadius.circular(8),
                 onTap: () => unawaited(terminal(session)),
                 child: SizedBox(
-                  width: 180,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          session.host.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                  width: 210,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 0, 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                session.host.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                session.status,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: muted,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 5),
-                        Text(
-                          session.status,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 13, color: muted),
-                        ),
-                      ],
-                    ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close ${session.host.name} session',
+                        onPressed: () {
+                          session.dispose();
+                          setState(() => sessions.remove(session));
+                        },
+                        icon: const Icon(Icons.close, size: 18),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -371,7 +430,7 @@ class _HostsScreenState extends State<HostsScreen> {
           },
         ),
       ),
-      const Divider(height: 24, color: hairline),
+      const SizedBox(height: 8),
     ],
   );
 
@@ -379,22 +438,16 @@ class _HostsScreenState extends State<HostsScreen> {
     if (filtered.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(32),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                hosts.isEmpty ? Icons.dns_outlined : Icons.search_off,
-                size: 42,
-                color: muted,
-              ),
-              const SizedBox(height: 16),
               Text(
                 hosts.isEmpty
                     ? 'No hosts on this device yet'
                     : 'No matching hosts',
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -428,7 +481,7 @@ class _HostsScreenState extends State<HostsScreen> {
     return RefreshIndicator(
       onRefresh: sync,
       child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         itemCount: filtered.length,
         itemBuilder: (context, index) {
           final host = filtered[index];
@@ -440,8 +493,8 @@ class _HostsScreenState extends State<HostsScreen> {
               if (showGroup)
                 Padding(
                   padding: EdgeInsets.only(
-                    top: index == 0 ? 16 : 26,
-                    bottom: 8,
+                    top: index == 0 ? 12 : 16,
+                    bottom: 4,
                   ),
                   child: Text(
                     host.group.isEmpty ? 'Ungrouped' : host.group,
@@ -453,14 +506,14 @@ class _HostsScreenState extends State<HostsScreen> {
                   ),
                 ),
               Material(
-                color: panel,
+                color: canvas,
                 child: InkWell(
                   onTap: () => open(host),
                   child: Container(
-                    constraints: const BoxConstraints(minHeight: 72),
+                    constraints: const BoxConstraints(minHeight: 64),
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
+                      horizontal: 8,
+                      vertical: 8,
                     ),
                     decoration: const BoxDecoration(
                       border: Border(
@@ -469,8 +522,8 @@ class _HostsScreenState extends State<HostsScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.dns_outlined, size: 21, color: action),
-                        const SizedBox(width: 16),
+                        const Icon(Icons.terminal, size: 20, color: muted),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -486,9 +539,7 @@ class _HostsScreenState extends State<HostsScreen> {
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                host.auth == 'none'
-                                    ? 'No password · ${host.username}@${host.address}:${host.port}'
-                                    : '${host.username}@${host.address}:${host.port}',
+                                '${host.username}@${host.address}:${host.port}',
                                 style: const TextStyle(
                                   color: muted,
                                   fontSize: 14,
@@ -500,7 +551,7 @@ class _HostsScreenState extends State<HostsScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Icon(Icons.chevron_right, color: muted, size: 20),
+                        const Icon(Icons.chevron_right, color: muted, size: 18),
                       ],
                     ),
                   ),
@@ -532,45 +583,36 @@ class _HostsScreenState extends State<HostsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Row(
-          children: [
-            Icon(Icons.terminal, color: action, size: 25),
-            SizedBox(width: 10),
-            Text(
-              'Harbor',
-              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
-            ),
-          ],
-        ),
+        title: Text(desktop == null ? 'Harbor' : 'Hosts'),
         actions: [
           if (desktop != null)
-            IconButton(
+            TextButton.icon(
               onPressed: busy ? null : sync,
-              tooltip: 'Sync hosts',
-              icon: const Icon(Icons.sync),
+              icon: const Icon(Icons.sync, size: 19),
+              label: const Text('Sync'),
             ),
-          PopupMenuButton<String>(
-            enabled: !busy,
-            tooltip: 'More options',
-            onSelected: (value) {
-              if (value == 'pair') {
-                pair();
-              } else {
-                forget();
-              }
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: 'pair',
-                child: Text('Pair another desktop'),
-              ),
-              if (desktop != null)
+          if (desktop != null)
+            PopupMenuButton<String>(
+              enabled: !busy,
+              tooltip: 'More options',
+              onSelected: (value) {
+                if (value == 'pair') {
+                  unawaited(pair());
+                } else {
+                  unawaited(forget());
+                }
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'pair',
+                  child: Text('Switch desktop'),
+                ),
                 const PopupMenuItem(
                   value: 'forget',
                   child: Text('Unpair this device'),
                 ),
-            ],
-          ),
+              ],
+            ),
         ],
       ),
       body: SafeArea(
@@ -583,34 +625,33 @@ class _HostsScreenState extends State<HostsScreen> {
               Expanded(child: onboarding())
             else ...[
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: Row(
                   children: [
-                    const Text(
-                      'Hosts',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -.8,
+                    Expanded(
+                      child: Text(
+                        desktop!,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: const TextStyle(fontSize: 14, color: ink),
                       ),
                     ),
-                    const SizedBox(height: 7),
-                    Text(
-                      'From $desktop',
-                      style: const TextStyle(fontSize: 16, color: muted),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      syncLabel,
-                      style: const TextStyle(fontSize: 14, color: muted),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        syncLabel,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        textAlign: TextAlign.end,
+                        style: const TextStyle(fontSize: 13, color: muted),
+                      ),
                     ),
                   ],
                 ),
               ),
               if (sessions.isNotEmpty) sessionsPanel(),
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: TextField(
                   controller: search,
                   onChanged: (value) {

@@ -7,6 +7,7 @@ class QLineEdit;
 class QTabWidget;
 class QLabel;
 class QPushButton;
+class QToolButton;
 class Window : public QMainWindow {
     Q_OBJECT
 public:
@@ -20,11 +21,16 @@ private:
     QLabel *title_;
     QLabel *details_;
     QLabel *endpoint_;
+    QLabel *username_;
+    QLabel *port_;
+    QLabel *authentication_;
     QLabel *fingerprint_;
+    QLabel *notes_;
+    QWidget *hostFields_;
+    QLabel *connectionHeading_;
     QLabel *status_;
     QPushButton *connect_;
-    QPushButton *edit_;
-    QPushButton *remove_;
+    QToolButton *hostMenu_;
     QPushButton *add_;
     QPushButton *emptyAdd_;
     QPushButton *clearSearch_;

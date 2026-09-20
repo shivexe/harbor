@@ -121,6 +121,7 @@ final class LibraryStore: ObservableObject {
         do {
             guard let vault else { throw HarborError.message("Your encrypted library is unavailable.") }
             let session = try TerminalSession(host: host, root: vault.directory)
+            session.onFinished = { [weak self] in self?.removeFinished($0) }
             sessions.append(session)
             activeSession = session.id
         } catch { self.error = error.localizedDescription }
@@ -128,6 +129,10 @@ final class LibraryStore: ObservableObject {
 
     func close(_ session: TerminalSession) {
         session.close()
+        removeFinished(session)
+    }
+
+    private func removeFinished(_ session: TerminalSession) {
         sessions.removeAll { $0.id == session.id }
         if activeSession == session.id { activeSession = sessions.last?.id }
     }

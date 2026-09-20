@@ -14,11 +14,13 @@ class PairScreen extends StatefulWidget {
     this.scannerBuilder,
     this.service,
     this.onPaired,
+    this.replacing = false,
     super.key,
   });
   final Widget Function(ValueChanged<String>)? scannerBuilder;
   final SyncService? service;
   final VoidCallback? onPaired;
+  final bool replacing;
 
   @override
   State<PairScreen> createState() => _PairScreenState();
@@ -26,7 +28,7 @@ class PairScreen extends StatefulWidget {
 
 class _PairScreenState extends State<PairScreen> {
   final vault = Vault();
-  SyncService get service => widget.service ?? SyncService(vault);
+  late final SyncService service = widget.service ?? SyncService(vault);
   String phase = 'scan';
   String? comparison;
   String? desktopName;
@@ -74,16 +76,22 @@ class _PairScreenState extends State<PairScreen> {
       }, cancelled: () => wasCancelled);
       if (wasCancelled) return;
       paired = true;
-      widget.onPaired?.call();
       setState(() => phase = 'syncing');
       await sync();
     } catch (failure) {
       if (wasCancelled) return;
       setState(() {
         phase = 'error';
-        error = failure is FormatException
-            ? 'This invitation is invalid or expired. Generate a new QR code on your desktop.'
-            : 'Pairing was not completed. Check both devices are on the same network, then generate a new QR code.';
+        error = switch (failure) {
+          FormatException() =>
+            'This QR code is invalid or expired. Generate a new code on your desktop.',
+          StateError(message: final message) when message.contains('denied') =>
+            'Pairing was rejected on your desktop. Generate a new code to try again.',
+          StateError(message: final message) when message.contains('expired') =>
+            'The pairing code expired. Generate a new code on your desktop.',
+          _ =>
+            'Could not reach your desktop. Check both devices are on the same network or private VPN, then try a new code.',
+        };
       });
     }
   }
@@ -91,13 +99,17 @@ class _PairScreenState extends State<PairScreen> {
   Future<void> sync() async {
     try {
       await service.sync(cancelled: () => wasCancelled);
-      if (!wasCancelled && mounted) Navigator.of(context).pop(true);
+      if (!wasCancelled && mounted) {
+        widget.onPaired?.call();
+        Navigator.of(context).pop(true);
+      }
     } catch (_) {
       if (wasCancelled) return;
       setState(() {
         phase = 'error';
-        error =
-            'Desktop paired, but hosts could not sync. Keep Harbor open on your desktop and retry.';
+        error = widget.replacing
+            ? 'The new desktop was approved, but sync failed. Your current hosts are still available. Keep the new desktop open and retry.'
+            : 'Desktop paired, but hosts could not sync. Keep Harbor open on your desktop and retry.';
       });
     }
   }
@@ -170,17 +182,13 @@ class _PairScreenState extends State<PairScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Padding(
-              padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
+              padding: EdgeInsets.fromLTRB(16, 20, 16, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Scan the QR code',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -.6,
-                    ),
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
                   ),
                   SizedBox(height: 8),
                   Text(
@@ -194,11 +202,11 @@ class _PairScreenState extends State<PairScreen> {
               child: LayoutBuilder(
                 builder: (context, bounds) {
                   final frame = min(
-                    276.0,
-                    min(bounds.maxWidth - 48, bounds.maxHeight - 32),
-                  ).clamp(0.0, 276.0);
+                    280.0,
+                    min(bounds.maxWidth - 32, bounds.maxHeight - 24),
+                  ).clamp(0.0, 280.0);
                   return Container(
-                    color: const Color(0xff101217),
+                    color: panel,
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -209,8 +217,8 @@ class _PairScreenState extends State<PairScreen> {
                               width: frame,
                               height: frame,
                               decoration: BoxDecoration(
-                                border: Border.all(color: action, width: 2),
-                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: muted, width: 2),
+                                borderRadius: BorderRadius.circular(8),
                               ),
                             ),
                           ),
@@ -222,7 +230,7 @@ class _PairScreenState extends State<PairScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: SizedBox(
                 width: double.infinity,
                 child: TextButton.icon(
@@ -240,21 +248,11 @@ class _PairScreenState extends State<PairScreen> {
               constraints: BoxConstraints(minHeight: bounds.maxHeight),
               child: IntrinsicHeight(
                 child: Padding(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(height: 48),
-                      Icon(
-                        phase == 'error'
-                            ? Icons.error_outline
-                            : Icons.devices_outlined,
-                        color: phase == 'error'
-                            ? Theme.of(context).colorScheme.error
-                            : action,
-                        size: 42,
-                      ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
                       Text(
                         phase == 'error'
                             ? paired
@@ -264,9 +262,8 @@ class _PairScreenState extends State<PairScreen> {
                             ? 'Bringing your hosts over.'
                             : 'Approve on your desktop.',
                         style: const TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -.6,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -282,23 +279,23 @@ class _PairScreenState extends State<PairScreen> {
                         ),
                       ),
                       if (comparison != null && phase == 'waiting') ...[
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 24),
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 24),
                           decoration: BoxDecoration(
-                            color: panel,
-                            borderRadius: BorderRadius.circular(12),
+                            color: raised,
+                            borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             comparison!,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontFamily: 'monospace',
-                              fontSize: 40,
+                              fontSize: 34,
                               fontWeight: FontWeight.w600,
                               letterSpacing: 6,
-                              color: action,
+                              color: ink,
                             ),
                           ),
                         ),

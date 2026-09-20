@@ -4,6 +4,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:dartssh2/dartssh2.dart';
 
 import 'models.dart';
+import 'private_key_loader.dart';
 
 enum ConnectionStage {
   openingSocket,
@@ -34,10 +35,7 @@ Future<SSHClient> connectSSH(
   final digest = await Sha256().hash(base64Decode(parts[1]));
   final expected = 'SHA256:${base64Encode(digest.bytes).replaceAll('=', '')}';
   final identities = host.auth == 'key'
-      ? SSHKeyPair.fromPem(
-          host.privateKey,
-          host.passphrase.isEmpty ? null : host.passphrase,
-        )
+      ? await loadPrivateKey(host.privateKey, host.passphrase)
       : null;
   onStage?.call(ConnectionStage.openingSocket);
   final socket = await SSHSocket.connect(

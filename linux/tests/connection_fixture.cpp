@@ -47,7 +47,7 @@ static bool waitFor(const std::function<bool()> &condition, int milliseconds = 8
 
 int main(int argc, char **argv) {
     QApplication application(argc, argv);
-    if (argc != 5) return 1;
+    if (argc != 5 && argc != 6) return 1;
     applyTheme(application);
     try {
         QDir output(argv[4]);
@@ -80,6 +80,7 @@ int main(int argc, char **argv) {
         const auto untrustedId = add(untrusted, "First server key");
         const auto delayedId = add(readHost(argv[2]), "Check mode banner");
         const auto rejectId = add(readHost(argv[3]), "Shell denied");
+        const auto dropId = argc == 6 ? add(readHost(argv[5]), "Interrupted connection") : QString();
         Window window(vault);
         window.show();
         auto tree = window.findChild<QTreeWidget *>();
@@ -107,7 +108,7 @@ int main(int argc, char **argv) {
         auto changed = open(wrongId);
         check(waitFor([&] { return reason(changed).contains("saved server key does not match"); }), "Changed key was not explained");
         check(!changed->connected() && changed->findChild<QStackedWidget *>()->currentIndex() == 0, "Changed key exposed terminal");
-        save("linux-1.1.2-failure.png");
+        save("linux-1.2.0-failure.png");
         auto deniedPort = open(refusedId);
         check(waitFor([&] { return reason(deniedPort).contains("refused SSH on this port"); }), "Refused port was not explained");
         auto deniedAuth = open(badId);
@@ -124,7 +125,7 @@ int main(int argc, char **argv) {
             buttons->button(QDialogButtonBox::Save)->click();
         });
         edit->click();
-        check(vault.hosts().size() == 7, "Edit lost a host");
+        check(vault.hosts().size() == (argc == 6 ? 8 : 7), "Edit lost a host");
         check([&] { for (const auto &entry : vault.hosts()) if (entry.toObject().value("id") == badId) return entry.toObject().value("username") == "noauth"; return false; }(), "Edit did not save updated username");
         retry->click();
         auto retried = qobject_cast<Terminal *>(tabs->currentWidget());
@@ -138,7 +139,7 @@ int main(int argc, char **argv) {
         auto fingerprint = first->findChild<QLabel *>("connectionFingerprint");
         auto scroll = first->findChild<QScrollArea *>();
         check(fingerprint && fingerprint->text().contains("SHA256:") && scroll && scroll->widget()->width() <= scroll->viewport()->width(), "Compact fingerprint panel clipped");
-        save("linux-1.1.2-trust.png");
+        save("linux-1.2.0-trust.png");
         trust->click();
         check(waitFor([&] { return first->connected(); }), "Approved first key did not open a shell");
         check([&] { for (const auto &entry : vault.hosts()) if (entry.toObject().value("id") == untrustedId) return !entry.toObject().value("hostKey").toString().isEmpty(); return false; }(), "Approved server key was not saved");
@@ -147,7 +148,7 @@ int main(int argc, char **argv) {
         auto message = delayed->findChild<QLabel *>("connectionServerMessage");
         check(waitFor([&] { return message && message->text().contains("https://login.tailscale.com/a/harbor-fixture"); }), "Pre-auth server sign-in URL was hidden");
         check(message->text().contains("shell request accepted") && !delayed->connected() && delayed->findChild<QStackedWidget *>()->currentIndex() == 0, "Spoofed banner advanced trusted progress");
-        save("linux-1.1.2-progress.png");
+        save("linux-1.2.0-progress.png");
         check(waitFor([&] { return delayed->connected(); }), "Delayed real shell did not open");
         const auto before = tabs->count();
         auto canceled = open(successId);
@@ -159,6 +160,13 @@ int main(int argc, char **argv) {
         QTimer::singleShot(400, &settle, &QEventLoop::quit);
         settle.exec();
         check(tabs->count() == before, "Canceled attempt reappeared");
+        if (!dropId.isEmpty()) {
+            auto dropped = open(dropId);
+            check(waitFor([&] { return dropped->connected(); }), "Abrupt transport fixture did not open a shell");
+            check(waitFor([&] { return reason(dropped).contains("ended unexpectedly"); }, 9000), "Abrupt disconnect did not show recovery");
+            check(!dropped->connected() && tabs->indexOf(dropped) >= 0 && dropped->findChild<QPushButton *>("retryConnection")->isVisible(), "Abrupt disconnect lost its recovery tab");
+            save("linux-1.2.0-disconnect.png");
+        }
         std::cout << "ready/refused/auth/key/shell/trust/banner/cancel/retry passed\n";
         return 0;
     } catch (const std::exception &exception) { std::cerr << exception.what() << '\n'; return 1; }

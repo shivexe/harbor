@@ -18,7 +18,7 @@ void main() {
         (_) async => accepted,
       );
       await tester.pumpWidget(const HarborApp());
-      expect(find.text('Your workspace is locked.'), findsOneWidget);
+      expect(find.text('Harbor is locked'), findsOneWidget);
       expect(find.text('Scan QR code'), findsNothing);
       await tester.tap(find.text('Unlock Harbor'));
       await tester.pumpAndSettle();
@@ -26,7 +26,7 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
-      expect(find.text('Your workspace is locked.'), findsOneWidget);
+      expect(find.text('Harbor is locked'), findsOneWidget);
       accepted = false;
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.tap(find.text('Unlock Harbor'));

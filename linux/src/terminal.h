@@ -24,6 +24,7 @@ public:
     bool connected() const;
 signals:
     void finished();
+    void shellEnded();
     void ready();
     void failed();
     void retryRequested();

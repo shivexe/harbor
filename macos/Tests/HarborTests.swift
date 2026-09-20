@@ -4,6 +4,7 @@ import AppKit
 import Darwin
 import SwiftTerm
 import SwiftUI
+import Vision
 import XCTest
 @testable import Harbor
 
@@ -91,6 +92,11 @@ final class HarborTests: XCTestCase {
         failed.consume("Host key verification failed.\r\n")
         XCTAssertNotNil(failed.failureHint)
         XCTAssertEqual(failed.phase, .connecting)
+        failed.consume("debug1: Exit status -1\r\n")
+        failed.consume("debug1: Exit status unknown\r\n")
+        XCTAssertFalse(failed.remoteExitStatus)
+        failed.consume("debug1: Exit status 255\r\n")
+        XCTAssertTrue(failed.remoteExitStatus)
     }
 
     #if DEBUG
@@ -109,28 +115,54 @@ final class HarborTests: XCTestCase {
         store.onLock = { [weak sharing] in sharing?.stop() }
         defer { store.lock() }
 
-        let main = NSWindow(contentRect: NSRect(x: 50, y: 50, width: 1000, height: 700), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        let main = NSWindow(contentRect: NSRect(x: 50, y: 50, width: 900, height: 600), styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         main.isReleasedWhenClosed = false
+        main.titleVisibility = .hidden
+        main.titlebarAppearsTransparent = true
         main.contentView = NSHostingView(rootView: ContentView(store: store, sharing: sharing).preferredColorScheme(.dark))
         main.makeKeyAndOrderFront(nil)
         defer { main.close() }
         try await Task.sleep(nanoseconds: 350_000_000)
-        try capture(main, to: workspace.appendingPathComponent(".work/mac-1.1-empty.png"))
+        try capture(main, to: workspace.appendingPathComponent(".work/mac-1.2-empty.png"))
 
         let editor = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 560, height: 650), styleMask: [.titled], backing: .buffered, defer: false)
         editor.isReleasedWhenClosed = false
         editor.contentView = NSHostingView(rootView: HostEditor(host: Host(auth: .none), store: store).preferredColorScheme(.dark))
+        NSApp.activate(ignoringOtherApps: true)
         editor.makeKeyAndOrderFront(nil)
         defer { editor.close() }
         try await Task.sleep(nanoseconds: 350_000_000)
-        try capture(editor, to: workspace.appendingPathComponent(".work/mac-1.1.1-editor.png"))
+        try capture(editor, to: workspace.appendingPathComponent(".work/mac-1.2-editor.png"))
         editor.orderOut(nil)
+
+        let keyEditor = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 560, height: 540), styleMask: [.titled], backing: .buffered, defer: false)
+        keyEditor.isReleasedWhenClosed = false
+        keyEditor.contentView = NSHostingView(rootView: HostEditor(host: Host(auth: .key), store: store).preferredColorScheme(.dark))
+        keyEditor.makeKeyAndOrderFront(nil)
+        defer { keyEditor.close() }
+        try await Task.sleep(nanoseconds: 250_000_000)
+        try capture(keyEditor, to: workspace.appendingPathComponent(".work/mac-1.2-key-form.png"))
+        keyEditor.orderOut(nil)
+
+        let paste = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 580, height: 460), styleMask: [.titled], backing: .buffered, defer: false)
+        paste.isReleasedWhenClosed = false
+        paste.contentView = NSHostingView(rootView: KeyPasteView(save: { _ in }).preferredColorScheme(.dark))
+        paste.makeKeyAndOrderFront(nil)
+        defer { paste.close() }
+        try await Task.sleep(nanoseconds: 250_000_000)
+        try capture(paste, to: workspace.appendingPathComponent(".work/mac-1.2-paste-key.png"))
+        paste.orderOut(nil)
 
         let host = Host(name: "Web server", address: "192.168.1.42", username: "deploy", secret: "fixture-password")
         try store.save(host)
         main.makeKeyAndOrderFront(nil)
         try await Task.sleep(nanoseconds: 350_000_000)
-        try capture(main, to: workspace.appendingPathComponent(".work/mac-1.1-host.png"))
+        try capture(main, to: workspace.appendingPathComponent(".work/mac-1.2-host.png"))
+        try store.save(Host(name: "Build runner", address: "build.internal", username: "ci", group: "Work", auth: .none))
+        try store.save(Host(name: "Database", address: "db.internal", username: "admin", group: "Work", auth: .none))
+        try store.save(Host(name: "Home gateway", address: "gateway.local", username: "home", group: "Personal", auth: .none))
+        try await Task.sleep(nanoseconds: 300_000_000)
+        try capture(main, to: workspace.appendingPathComponent(".work/mac-1.2-hosts-grouped.png"))
 
         let pair = NSWindow(contentRect: NSRect(x: 90, y: 90, width: 720, height: 650), styleMask: [.titled], backing: .buffered, defer: false)
         pair.isReleasedWhenClosed = false
@@ -141,7 +173,7 @@ final class HarborTests: XCTestCase {
         sharing.inviteAutomatically()
         XCTAssertNotNil(sharing.invitation, sharing.error ?? "No invitation")
         try await Task.sleep(nanoseconds: 350_000_000)
-        try capture(pair, to: workspace.appendingPathComponent(".work/mac-1.1-pairing.png"))
+        try capture(pair, to: workspace.appendingPathComponent(".work/mac-1.2-pairing.png"))
     }
 
     @MainActor
@@ -152,6 +184,179 @@ final class HarborTests: XCTestCase {
         view.cacheDisplay(in: view.bounds, to: bitmap)
         guard let png = bitmap.representation(using: .png, properties: [:]) else { throw HarborError.message("Could not encode the screenshot.") }
         try png.write(to: url, options: .atomic)
+    }
+
+    @MainActor
+    private func click(_ window: NSWindow, x: CGFloat, y: CGFloat) throws {
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: NSPoint(x: x, y: y), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            window.sendEvent(event)
+        }
+    }
+
+    @MainActor
+    private func visibleWords(_ window: NSWindow) throws -> String {
+        let view = try XCTUnwrap(window.contentView)
+        view.displayIfNeeded()
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let image = try XCTUnwrap(bitmap.cgImage)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+    }
+
+    @MainActor
+    func testEditorAndPairingControlsRespondToClicks() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let directory = workspace.appendingPathComponent(".work/ui-actions-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = try Vault(directory: directory, key: SymmetricKey(size: .bits256))
+        var library = Library()
+        library.signingKey = Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString()
+        try vault.save(library)
+        let store = LibraryStore(testVault: vault, library: library)
+        let sharing = SharingService(store: store)
+        store.onLock = { [weak sharing] in sharing?.stop() }
+        defer { store.lock() }
+
+        let editor = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 560, height: 540), styleMask: [.titled], backing: .buffered, defer: false)
+        editor.isReleasedWhenClosed = false
+        editor.contentView = NSHostingView(rootView: HostEditor(host: Host(auth: .none), store: store).preferredColorScheme(.dark))
+        editor.makeKeyAndOrderFront(nil)
+        defer { editor.close() }
+        try await Task.sleep(nanoseconds: 350_000_000)
+        XCTAssertFalse(try visibleWords(editor).contains("Display name"))
+        try click(editor, x: 90, y: 209)
+        try await Task.sleep(nanoseconds: 350_000_000)
+        XCTAssertTrue(try visibleWords(editor).contains("Display name"))
+        try capture(editor, to: workspace.appendingPathComponent(".work/mac-1.2-editor-expanded.png"))
+        try click(editor, x: 90, y: 364)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        try capture(editor, to: workspace.appendingPathComponent(".work/mac-1.2-editor-collapsed.png"))
+        XCTAssertFalse(try visibleWords(editor).contains("Display name"))
+        editor.orderOut(nil)
+
+        let pair = NSWindow(contentRect: NSRect(x: 90, y: 90, width: 720, height: 650), styleMask: [.titled], backing: .buffered, defer: false)
+        pair.isReleasedWhenClosed = false
+        pair.contentView = NSHostingView(rootView: SharingView(store: store, sharing: sharing).preferredColorScheme(.dark))
+        pair.makeKeyAndOrderFront(nil)
+        defer { pair.close() }
+        sharing.port = String(Int.random(in: 30000...60000))
+        sharing.inviteAutomatically()
+        let firstInvitation = try XCTUnwrap(sharing.invitation)
+        try await Task.sleep(nanoseconds: 350_000_000)
+        try click(pair, x: 585, y: 624)
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertTrue(try visibleWords(pair).contains("Network for pairing"))
+        try capture(pair, to: workspace.appendingPathComponent(".work/mac-1.2-network-options.png"))
+        try click(pair, x: 50, y: 624)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(try visibleWords(pair).contains("Devices"))
+        if let choice = sharing.networks.enumerated().first(where: { $0.element.address != sharing.address }) {
+            try click(pair, x: 585, y: 624)
+            try await Task.sleep(nanoseconds: 200_000_000)
+            try click(pair, x: 150, y: 514 - CGFloat(choice.offset) * 55)
+            try await Task.sleep(nanoseconds: 350_000_000)
+            XCTAssertEqual(sharing.address, choice.element.address)
+            XCTAssertNotEqual(sharing.invitation?.pairId, firstInvitation.pairId)
+            XCTAssertTrue(try visibleWords(pair).contains("Devices"))
+        }
+    }
+
+    @MainActor
+    func testHostEditorSaveClickPersistsAndReopens() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let directory = workspace.appendingPathComponent(".work/editor-save-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = try Vault(directory: directory, key: SymmetricKey(size: .bits256))
+        var library = Library()
+        library.signingKey = Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString()
+        try vault.save(library)
+        let store = LibraryStore(testVault: vault, library: library)
+        defer { store.lock() }
+        let draft = Host(address: "qa.internal", username: "tester", group: "Work", auth: .none)
+        var savedID: String?
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 560, height: 540), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: HostEditor(host: draft, store: store, onSaved: { savedID = $0.id }).preferredColorScheme(.dark))
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        try await Task.sleep(nanoseconds: 250_000_000)
+        try click(window, x: 490, y: 27)
+        try await Task.sleep(nanoseconds: 250_000_000)
+        let saved = try XCTUnwrap(store.library.hosts.first)
+        XCTAssertEqual(saved.id, savedID)
+        XCTAssertEqual(saved.name, "qa.internal")
+        XCTAssertEqual(saved.group, "Work")
+        XCTAssertEqual(try vault.load().hosts, [saved])
+        window.contentView = NSHostingView(rootView: HostEditor(host: saved, store: store).preferredColorScheme(.dark))
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertTrue(try visibleWords(window).contains("Edit host"))
+        XCTAssertTrue(try visibleWords(window).contains("Work"))
+    }
+
+    @MainActor
+    func testHostEditorShowsValidationProgressAndCancelDiscardsSave() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let directory = workspace.appendingPathComponent(".work/editor-cancel-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = try Vault(directory: directory, key: SymmetricKey(size: .bits256))
+        var library = Library()
+        library.signingKey = Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString()
+        try vault.save(library)
+        let store = LibraryStore(testVault: vault, library: library)
+        defer { store.lock() }
+        let draft = Host(address: "cancel.internal", username: "tester", auth: .none)
+        var saveCount = 0
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 560, height: 540), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: HostEditor(host: draft, store: store, prepare: { host, port, password, passphrase in
+            usleep(1_500_000)
+            return try HostEditor.preparedHost(host, portText: port, password: password, passphrase: passphrase)
+        }, onSaved: { _ in saveCount += 1 }).preferredColorScheme(.dark))
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        try await Task.sleep(nanoseconds: 250_000_000)
+        try click(window, x: 490, y: 27)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(try visibleWords(window).contains("Validating"))
+        try click(window, x: 390, y: 27)
+        try await Task.sleep(nanoseconds: 1_700_000_000)
+        XCTAssertEqual(saveCount, 0)
+        XCTAssertTrue(store.library.hosts.isEmpty)
+        XCTAssertTrue(try vault.load().hosts.isEmpty)
+    }
+
+    @MainActor
+    func testPrivateKeyPasteButtonOpensAndCancelsEditor() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let directory = workspace.appendingPathComponent(".work/paste-button-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = try Vault(directory: directory, key: SymmetricKey(size: .bits256))
+        var library = Library()
+        library.signingKey = Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString()
+        try vault.save(library)
+        let store = LibraryStore(testVault: vault, library: library)
+        defer { store.lock() }
+        var draft = Host(auth: .key)
+        draft.privateKey = try encryptedPEMFixtures().pkcs8
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 560, height: 540), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: HostEditor(host: draft, store: store).preferredColorScheme(.dark))
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        try await Task.sleep(nanoseconds: 250_000_000)
+        try click(window, x: 465, y: 227)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        XCTAssertTrue(try visibleWords(sheet).contains("Paste private key"))
+        try click(sheet, x: 435, y: 27)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertNil(window.attachedSheet)
+        XCTAssertTrue(try visibleWords(window).contains("Private key added"))
+        XCTAssertTrue(store.library.hosts.isEmpty)
     }
 
     @MainActor
@@ -304,8 +509,9 @@ final class HarborTests: XCTestCase {
         wrong.knownHosts = "[127.0.0.1]:\(port) \(parts[0]) \(key.base64EncodedString())\n"
         let rejected = try TerminalSession(host: wrong, root: root)
         defer { rejected.close() }
-        let refused = await waitForTerminal(rejected, text: "Host key verification failed", seconds: 8)
-        XCTAssertTrue(refused, "OpenSSH did not report the changed server key.")
+        let refused = await waitForPhase(rejected, .failed, seconds: 8)
+        XCTAssertTrue(refused, "OpenSSH did not reject the changed server key.")
+        XCTAssertTrue(rejected.failure?.contains("server key") == true)
         XCTAssertFalse(String(data: rejected.terminal.getTerminal().getBufferAsData(kind: .normal), encoding: .utf8)?.contains("harbor-fixture $") ?? false)
     }
 
@@ -347,16 +553,225 @@ final class HarborTests: XCTestCase {
     }
 
     @MainActor
+    func testRemoteShellExitClosesTabAfterNestedShell() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixtureURL = workspace.appendingPathComponent(".work/ssh-1.2-hosts.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else { throw XCTSkip("Disposable SSH fixture is unavailable.") }
+        let fixtures = try JSONDecoder().decode([WireHost].self, from: Data(contentsOf: fixtureURL))
+        let fixture = try XCTUnwrap(fixtures.first { $0.authType == "none" })
+        let directory = workspace.appendingPathComponent(".work/exit-vault-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = try Vault(directory: directory, key: SymmetricKey(size: .bits256))
+        var library = Library()
+        library.signingKey = Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString()
+        var host = Host(name: "Shell exit", address: "127.0.0.1", port: 48610, username: fixture.username, auth: .none)
+        host.knownHosts = "[127.0.0.1]:48610 \(fixture.hostKey)\n"
+        library.hosts = [host]
+        try vault.save(library)
+        let store = LibraryStore(testVault: vault, library: library)
+        let sharing = SharingService(store: store)
+        store.onLock = { [weak sharing] in sharing?.stop() }
+        defer { store.lock() }
+        let window = NSWindow(contentRect: NSRect(x: 60, y: 60, width: 900, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: ContentView(store: store, sharing: sharing).preferredColorScheme(.dark))
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        store.connect(host)
+        let session = try XCTUnwrap(store.sessions.first)
+        XCTAssertNil(session.terminal.superview)
+        let ready = await waitForPhase(session, .ready, seconds: 12)
+        XCTAssertTrue(ready, session.failure ?? session.status)
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertNotNil(session.terminal.superview)
+        session.terminal.send(data: Array("sh\r".utf8)[...])
+        try await Task.sleep(nanoseconds: 250_000_000)
+        let marker = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        session.terminal.send(data: Array("printf 'HARBOR_SUB_%s_DONE\\n' '\(marker)'\r".utf8)[...])
+        let executed = await waitForTerminal(session, text: "HARBOR_SUB_\(marker)_DONE", seconds: 6)
+        XCTAssertTrue(executed)
+        session.terminal.send(data: Array("exit\r".utf8)[...])
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(store.sessions.count, 1)
+        XCTAssertEqual(session.phase, .ready)
+        session.terminal.send(data: Array("exit\r".utf8)[...])
+        for _ in 0..<60 {
+            if store.sessions.isEmpty { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertTrue(store.sessions.isEmpty, "The completed shell left its terminal tab open.")
+        XCTAssertNil(store.activeSession)
+    }
+
+    @MainActor
+    func testAbruptSSHTransportFailureKeepsRecoveryTab() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixtureURL = workspace.appendingPathComponent(".work/ssh-1.2-disconnect.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else { throw XCTSkip("Abrupt SSH fixture is unavailable.") }
+        let fixture = try JSONDecoder().decode(WireHost.self, from: Data(contentsOf: fixtureURL))
+        let directory = workspace.appendingPathComponent(".work/disconnect-vault-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = try Vault(directory: directory, key: SymmetricKey(size: .bits256))
+        var library = Library()
+        library.signingKey = Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString()
+        var host = Host(name: "Disconnect fixture", address: "127.0.0.1", port: 48611, username: fixture.username, auth: .none)
+        host.knownHosts = "[127.0.0.1]:48611 \(fixture.hostKey)\n"
+        library.hosts = [host]
+        try vault.save(library)
+        let store = LibraryStore(testVault: vault, library: library)
+        defer { store.lock() }
+        let sharing = SharingService(store: store)
+        let window = NSWindow(contentRect: NSRect(x: 60, y: 60, width: 900, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: ContentView(store: store, sharing: sharing).preferredColorScheme(.dark))
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        store.connect(host)
+        let session = try XCTUnwrap(store.sessions.first)
+        let ready = await waitForPhase(session, .ready, seconds: 5)
+        XCTAssertTrue(ready, session.failure ?? session.status)
+        guard ready else { return }
+        let failed = await waitForPhase(session, .failed, seconds: 8)
+        XCTAssertTrue(failed, session.failure ?? session.status)
+        XCTAssertEqual(store.sessions.count, 1)
+        XCTAssertEqual(store.activeSession, session.id)
+        XCTAssertNil(session.terminal.superview)
+        XCTAssertTrue(session.failure?.contains("unexpectedly") == true)
+        try capture(window, to: workspace.appendingPathComponent(".work/mac-1.2-disconnected.png"))
+    }
+
+    @MainActor
+    func testPrivateKeyImportAndPasteValidationWithVaultReload() throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixtureURL = workspace.appendingPathComponent(".work/ssh-1.2-hosts.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else { throw XCTSkip("Disposable key fixture is unavailable.") }
+        let fixtures = try JSONDecoder().decode([WireHost].self, from: Data(contentsOf: fixtureURL))
+        let plain = try XCTUnwrap(fixtures.first { $0.authType == "key" && $0.passphrase.isEmpty })
+        let encrypted = try XCTUnwrap(fixtures.first { $0.authType == "key" && !$0.passphrase.isEmpty })
+        let imported = try PrivateKeyValidator.validate(plain.privateKey)
+        XCTAssertEqual(try PrivateKeyValidator.validate(plain.privateKey.replacingOccurrences(of: "\n", with: "\r\n")), imported)
+        XCTAssertNotNil(try PrivateKeyValidator.validate(encrypted.privateKey).range(of: "OPENSSH PRIVATE KEY"))
+        XCTAssertThrowsError(try PrivateKeyValidator.validate("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA"))
+        XCTAssertThrowsError(try PrivateKeyValidator.validate(String(plain.privateKey.dropLast(40))))
+        XCTAssertThrowsError(try PrivateKeyValidator.validate(String(repeating: "a", count: 256 * 1024 + 1)))
+        let directory = workspace.appendingPathComponent(".work/key-vault-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = try Vault(directory: directory, key: SymmetricKey(size: .bits256))
+        var host = Host(name: "Imported key", address: "127.0.0.1", username: "harbor", auth: .key)
+        host.privateKey = imported
+        host.secret = encrypted.passphrase
+        let saved = try HostEditor.preparedHost(host, portText: "22", password: "", passphrase: encrypted.passphrase)
+        var library = Library()
+        library.signingKey = Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString()
+        library.hosts = [saved]
+        try vault.save(library)
+        XCTAssertNil(try Data(contentsOf: vault.archive).range(of: Data(imported.utf8)))
+        XCTAssertEqual(try vault.load().hosts.first?.privateKey, imported)
+        XCTAssertEqual(try vault.load().hosts.first?.secret, encrypted.passphrase)
+    }
+
+    @MainActor
+    func testEncryptedPEMPassphraseValidationAndVaultReload() throws {
+        let fixtures = try encryptedPEMFixtures()
+        let imported = try PrivateKeyValidator.validate(fixtures.pkcs8)
+        XCTAssertEqual(imported, fixtures.pkcs8)
+        XCTAssertEqual(try PrivateKeyValidator.validate(fixtures.traditionalEC), fixtures.traditionalEC)
+        var host = Host(name: "Encrypted PEM", address: "127.0.0.1", username: "harbor", auth: .key)
+        host.privateKey = imported
+        let original = host
+        XCTAssertThrowsError(try HostEditor.preparedHost(host, portText: "22", password: "", passphrase: "")) {
+            XCTAssertEqual($0.localizedDescription, "This private key is encrypted. Enter its passphrase.")
+        }
+        XCTAssertEqual(host, original)
+        XCTAssertThrowsError(try HostEditor.preparedHost(host, portText: "22", password: "", passphrase: "wrong-passphrase")) {
+            XCTAssertEqual($0.localizedDescription, "The private key passphrase is incorrect, or the encrypted key is damaged.")
+        }
+        let invalidPassphrase = "The private key passphrase must be at most 4096 UTF-8 bytes and cannot contain NUL or line break characters."
+        for passphrase in ["nul\0byte", "line\nfeed", "carriage\rreturn", String(repeating: "x", count: 4097)] {
+            XCTAssertThrowsError(try HostEditor.preparedHost(host, portText: "22", password: "", passphrase: passphrase)) {
+                XCTAssertEqual($0.localizedDescription, invalidPassphrase)
+            }
+        }
+        XCTAssertThrowsError(try HostEditor.preparedHost(host, portText: "22", password: "", passphrase: String(repeating: "x", count: 4096))) {
+            XCTAssertEqual($0.localizedDescription, "The private key passphrase is incorrect, or the encrypted key is damaged.")
+        }
+        XCTAssertEqual(host, original)
+        let saved = try HostEditor.preparedHost(host, portText: "22", password: "", passphrase: fixtures.passphrase)
+        XCTAssertEqual(saved.privateKey, fixtures.pkcs8)
+        XCTAssertEqual(saved.secret, fixtures.passphrase)
+        XCTAssertEqual(WireHost(saved).privateKey, fixtures.pkcs8)
+        XCTAssertEqual(WireHost(saved).passphrase, fixtures.passphrase)
+        XCTAssertNoThrow(try PrivateKeyValidator.validate(fixtures.traditionalEC, passphrase: fixtures.passphrase))
+        XCTAssertThrowsError(try PrivateKeyValidator.validate(fixtures.traditionalEC, passphrase: "wrong-passphrase"))
+        var lines = fixtures.pkcs8.split(whereSeparator: \.isNewline).map(String.init)
+        var encrypted = try XCTUnwrap(Data(base64Encoded: lines.dropFirst().dropLast().joined()))
+        encrypted[encrypted.count - 1] ^= 1
+        let encoded = encrypted.base64EncodedString(options: .lineLength64Characters).replacingOccurrences(of: "\r\n", with: "\n")
+        let corrupted = "-----BEGIN ENCRYPTED PRIVATE KEY-----\n\(encoded)\n-----END ENCRYPTED PRIVATE KEY-----\n"
+        XCTAssertNoThrow(try PrivateKeyValidator.validate(corrupted))
+        XCTAssertThrowsError(try PrivateKeyValidator.validate(corrupted, passphrase: fixtures.passphrase)) {
+            XCTAssertEqual($0.localizedDescription, "The private key passphrase is incorrect, or the encrypted key is damaged.")
+        }
+        lines.remove(at: lines.count / 2)
+        XCTAssertThrowsError(try PrivateKeyValidator.validate(lines.joined(separator: "\n")))
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let directory = workspace.appendingPathComponent(".work/encrypted-pem-vault-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let vault = try Vault(directory: directory, key: SymmetricKey(size: .bits256))
+        var library = Library()
+        library.signingKey = Curve25519.Signing.PrivateKey().rawRepresentation.base64EncodedString()
+        library.hosts = [saved]
+        try vault.save(library)
+        let archive = try Data(contentsOf: vault.archive)
+        XCTAssertNil(archive.range(of: Data(fixtures.pkcs8.utf8)))
+        XCTAssertNil(archive.range(of: Data(fixtures.passphrase.utf8)))
+        let reloaded = try XCTUnwrap(try vault.load().hosts.first)
+        XCTAssertEqual(reloaded.privateKey, fixtures.pkcs8)
+        XCTAssertEqual(reloaded.secret, fixtures.passphrase)
+    }
+
+    @MainActor
+    func testEncryptedPEMThroughNativeTerminal() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixtureURL = workspace.appendingPathComponent(".work/ssh-encrypted-pem-host.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else { throw XCTSkip("Disposable encrypted PEM SSH fixture is unavailable.") }
+        let fixture = try JSONDecoder().decode(WireHost.self, from: Data(contentsOf: fixtureURL))
+        var host = Host(name: fixture.name, address: fixture.hostname, port: fixture.port, username: fixture.username, auth: .key)
+        host.privateKey = fixture.privateKey
+        host.secret = fixture.passphrase
+        host.knownHosts = "[\(fixture.hostname)]:\(fixture.port) \(fixture.hostKey)\n"
+        host = try HostEditor.preparedHost(host, portText: String(fixture.port), password: "", passphrase: fixture.passphrase)
+        let root = workspace.appendingPathComponent(".work/encrypted-pem-ssh-session-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = try TerminalSession(host: host, root: root)
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 800, height: 500), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = session.terminal
+        window.makeKeyAndOrderFront(nil)
+        defer { session.close(); window.close() }
+        let ready = await waitForPhase(session, .ready, seconds: 20)
+        XCTAssertTrue(ready, session.failure ?? session.status)
+        guard ready else { return }
+        let marker = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        session.terminal.send(data: Array("printf 'HARBOR_ENCRYPTED_PEM_%s_DONE\\n' '\(marker)'\r".utf8)[...])
+        let executed = await waitForTerminal(session, text: "HARBOR_ENCRYPTED_PEM_\(marker)_DONE", seconds: 8)
+        XCTAssertTrue(executed)
+        XCTAssertEqual(session.host.privateKey, fixture.privateKey)
+        XCTAssertEqual(session.host.secret, fixture.passphrase)
+    }
+
+    @MainActor
     func testConnectionProgressAndSpacedKnownHostsPathAgainstDisposableServer() async throws {
         let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let fixtureURL = workspace.appendingPathComponent(".work/ssh-progress-hosts.json")
+        let fixtureURL = workspace.appendingPathComponent(".work/ssh-1.2-hosts.json")
         guard FileManager.default.fileExists(atPath: fixtureURL.path) else { throw XCTSkip("Disposable progress SSH fixture is unavailable.") }
         let fixtures = try JSONDecoder().decode([WireHost].self, from: Data(contentsOf: fixtureURL))
         XCTAssertEqual(fixtures.count, 4)
         let root = workspace.appendingPathComponent(".work/Harbor QA Application Support \(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: root) }
-        let port = 48608
+        let port = 48610
         for fixture in fixtures.filter({ $0.authType == "none" || ($0.authType == "key" && $0.passphrase.isEmpty) }) {
             let auth = try XCTUnwrap(Host.Authentication(rawValue: fixture.authType))
             var host = Host(name: fixture.name, address: "127.0.0.1", port: port, username: fixture.username, auth: auth)
@@ -370,9 +785,9 @@ final class HarborTests: XCTestCase {
             window.makeKeyAndOrderFront(nil)
             var closed = false
             defer { if !closed { session.close(); window.close() } }
-            if auth == .none { try capture(window, to: workspace.appendingPathComponent(".work/mac-1.1.2-connecting.png")) }
+            if auth == .none { try capture(window, to: workspace.appendingPathComponent(".work/mac-1.2-connecting.png")) }
             try await Task.sleep(nanoseconds: 150_000_000)
-            XCTAssertNotNil(session.terminal.superview, "The hidden terminal did not mount for PTY authentication.")
+            if session.phase != .ready { XCTAssertNil(session.terminal.superview, "The terminal mounted before the shell was accepted.") }
             let opened = await waitForPhase(session, .ready, seconds: 20)
             let pendingOutput = String(data: session.terminal.getTerminal().getBufferAsData(kind: .normal), encoding: .utf8) ?? ""
             XCTAssertTrue(opened, "Shell was not accepted for \(fixture.name): \(session.failure ?? session.status), latest milestone \(session.lastMilestone.title), password prompt \(pendingOutput.localizedCaseInsensitiveContains("password:")), permission denied \(pendingOutput.contains("Permission denied"))")
@@ -408,7 +823,7 @@ final class HarborTests: XCTestCase {
         XCTAssertTrue(failed)
         XCTAssertEqual(rejected.lastMilestone, .verifying)
         XCTAssertTrue(rejected.failure?.contains("server key") == true)
-        try capture(failureWindow, to: workspace.appendingPathComponent(".work/mac-1.1.2-failed.png"))
+        try capture(failureWindow, to: workspace.appendingPathComponent(".work/mac-1.2-key-rejected.png"))
         rejected.close()
         let cancelled = try TerminalSession(host: Host(name: fixture.name, address: "127.0.0.1", port: port, username: fixture.username, auth: .none, knownHosts: "[127.0.0.1]:\(port) \(fixture.hostKey)\n"), root: root)
         cancelled.close()
@@ -653,7 +1068,7 @@ final class HarborTests: XCTestCase {
     }
 
     @MainActor
-    func testHostEditorDefaultsNameOnlyAtSaveAndPreservesKeyDraft() throws {
+    func testHostEditorDefaultsNameOnlyAtSaveAndRejectsInvalidKeyDraft() throws {
         var host = Host(address: "example.com", username: "deploy")
         XCTAssertEqual(host.name, "")
         let saved = try HostEditor.preparedHost(host, portText: "22", password: "fixture-secret", passphrase: "")
@@ -661,10 +1076,7 @@ final class HarborTests: XCTestCase {
         XCTAssertEqual(saved.secret, "fixture-secret")
         host.auth = .key
         host.privateKey = "-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----"
-        let key = try HostEditor.preparedHost(host, portText: "2222", password: "unused", passphrase: "fixture-passphrase")
-        XCTAssertEqual(key.privateKey, host.privateKey)
-        XCTAssertEqual(key.secret, "fixture-passphrase")
-        XCTAssertEqual(key.port, 2222)
+        XCTAssertThrowsError(try HostEditor.preparedHost(host, portText: "2222", password: "unused", passphrase: "fixture-passphrase"))
         XCTAssertThrowsError(try HostEditor.preparedHost(host, portText: "0", password: "", passphrase: ""))
     }
 
@@ -694,4 +1106,39 @@ final class HarborTests: XCTestCase {
         host.privateKey = ""
         XCTAssertThrowsError(try host.validate())
     }
+
+    private func encryptedPEMFixtures() throws -> (pkcs8: String, traditionalEC: String, passphrase: String) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Harbor-Encrypted-PEM-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let rsa = root.appendingPathComponent("rsa.pem")
+        let pkcs8 = root.appendingPathComponent("rsa-encrypted.pem")
+        let ec = root.appendingPathComponent("ec.pem")
+        let encryptedEC = root.appendingPathComponent("ec-encrypted.pem")
+        let passphrase = "fixture encrypted PEM passphrase"
+        try runOpenSSL(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:1024", "-out", rsa.path])
+        try runOpenSSL(["pkcs8", "-topk8", "-in", rsa.path, "-out", pkcs8.path, "-v2", "aes-256-cbc", "-passout", "stdin"], input: passphrase)
+        try runOpenSSL(["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", ec.path])
+        try runOpenSSL(["ec", "-in", ec.path, "-out", encryptedEC.path, "-aes256", "-passout", "stdin"], input: passphrase)
+        return (try String(contentsOf: pkcs8, encoding: .utf8), try String(contentsOf: encryptedEC, encoding: .utf8), passphrase)
+    }
+
+    private func runOpenSSL(_ arguments: [String], input: String? = nil) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
+        process.arguments = arguments
+        let pipe = input == nil ? nil : Pipe()
+        if let pipe { process.standardInput = pipe }
+        else { process.standardInput = FileHandle.nullDevice }
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        if let input, let pipe {
+            try pipe.fileHandleForWriting.write(contentsOf: Data((input + "\n").utf8))
+            try pipe.fileHandleForWriting.close()
+        }
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { throw HarborError.message("Could not create the encrypted PEM test fixture.") }
+    }
+
 }

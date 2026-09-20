@@ -1,4 +1,5 @@
 #include "vault.h"
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -8,10 +9,23 @@
 #include <QRegularExpression>
 #include <QSet>
 #include <QHostAddress>
+#include <QProcess>
+#include <QProcessEnvironment>
+#include <QStandardPaths>
 #include <QtEndian>
 #include <openssl/evp.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
 #include <openssl/rand.h>
 #include <openssl/crypto.h>
+#include <openssl/x509.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <signal.h>
+#include <unistd.h>
+#include <cerrno>
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 
@@ -75,6 +89,148 @@ QString validateHostEndpoint(const QString &hostname, int port) {
     static const QRegularExpression address("^[A-Za-z0-9][A-Za-z0-9.:%_-]{0,252}$");
     if (QHostAddress(hostname).isNull() && !address.match(hostname).hasMatch()) return "Enter a hostname or IP address without spaces.";
     if (port < 1 || port > 65535) return "Port must be between 1 and 65535.";
+    return {};
+}
+
+static QString runOpenSshKeyValidation(const QByteArray &contents, const QByteArray &passphrase) {
+    const auto tool = QStandardPaths::findExecutable("ssh-keygen");
+    if (tool.isEmpty()) return "OpenSSH key validation is unavailable. Install openssh-client and try again.";
+    const auto descriptor = memfd_create("harbor-key", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+    if (descriptor < 0 || fchmod(descriptor, S_IRUSR | S_IWUSR) != 0) { if (descriptor >= 0) close(descriptor); return "Could not validate this private key. Try again."; }
+    QFile key;
+    if (!key.open(descriptor, QIODevice::ReadWrite, QFileDevice::AutoCloseHandle) || key.write(contents) != contents.size() || !key.flush() || !key.seek(0) || fcntl(descriptor, F_ADD_SEALS, F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_WRITE | F_SEAL_SEAL) != 0) return "Could not validate this private key. Try again.";
+    int passphraseDescriptor = -1;
+    QFile passphraseFile;
+    if (!passphrase.isEmpty()) {
+        passphraseDescriptor = memfd_create("harbor-passphrase", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+        if (passphraseDescriptor < 0 || fchmod(passphraseDescriptor, S_IRUSR | S_IWUSR) != 0) { if (passphraseDescriptor >= 0) close(passphraseDescriptor); return "Could not validate this private key. Try again."; }
+        if (!passphraseFile.open(passphraseDescriptor, QIODevice::ReadWrite, QFileDevice::AutoCloseHandle)) { close(passphraseDescriptor); return "Could not validate this private key. Try again."; }
+        auto answer = passphrase + '\n';
+        const bool ready = passphraseFile.write(answer) == answer.size() && passphraseFile.flush() && passphraseFile.seek(0) && fcntl(passphraseDescriptor, F_ADD_SEALS, F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_WRITE | F_SEAL_SEAL) == 0;
+        wipe(answer);
+        if (!ready) return "Could not validate this private key. Try again.";
+    }
+    QProcess process;
+    process.setProgram(tool);
+    process.setArguments({passphrase.isEmpty() ? "-l" : "-y", "-f", QString("/proc/self/fd/%1").arg(descriptor)});
+    process.setStandardOutputFile(QProcess::nullDevice());
+    process.setStandardErrorFile(QProcess::nullDevice());
+    process.setStandardInputFile(QProcess::nullDevice());
+    auto environment = QProcessEnvironment::systemEnvironment();
+    for (const auto &name : {"SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "HARBOR_ASKPASS_FD", "HARBOR_ASKPASS_SOCKET", "HARBOR_ASKPASS_CAPABILITY"}) environment.remove(name);
+    if (passphrase.isEmpty()) {
+        environment.insert("SSH_ASKPASS_REQUIRE", "never");
+    } else {
+        const auto helper = QCoreApplication::applicationDirPath() + "/harbor-askpass";
+        if (!QFileInfo::exists(helper)) return "OpenSSH passphrase validation is unavailable. Reinstall Harbor and try again.";
+        environment.insert("SSH_ASKPASS", helper);
+        environment.insert("SSH_ASKPASS_REQUIRE", "force");
+        environment.insert("HARBOR_ASKPASS_FD", QString::number(passphraseDescriptor));
+        environment.insert("DISPLAY", environment.value("DISPLAY", ":0"));
+    }
+    process.setProcessEnvironment(environment);
+    process.setChildProcessModifier([&process, descriptor, passphraseDescriptor] {
+        if (setpgid(0, 0) != 0) process.failChildProcessModifier("Could not isolate validator", errno);
+        if (fcntl(descriptor, F_SETFD, 0) != 0) process.failChildProcessModifier("Could not inherit private key", errno);
+        if (passphraseDescriptor >= 0 && fcntl(passphraseDescriptor, F_SETFD, 0) != 0) process.failChildProcessModifier("Could not inherit passphrase", errno);
+    });
+    process.start();
+    if (!process.waitForStarted(3000)) return "Could not validate this private key. Try again.";
+    if (!process.waitForFinished(10000)) {
+        const auto pid = process.processId();
+        if (pid <= 0 || (::kill(-pid, SIGKILL) != 0 && errno != ESRCH)) process.kill();
+        process.waitForFinished(1000);
+        return "Could not validate this private key. Try again.";
+    }
+    return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0 ? QString() : "The key passphrase is incorrect, or the encrypted key is damaged.";
+}
+
+static QString validatePkcs8Kdf(const QByteArray &der) {
+    const auto error = QString("This encrypted private key uses unsupported or excessive key derivation parameters.");
+    const unsigned char *cursor = reinterpret_cast<const unsigned char *>(der.constData());
+    auto end = cursor + der.size();
+    auto envelope = std::unique_ptr<X509_SIG, decltype(&X509_SIG_free)>(d2i_X509_SIG(nullptr, &cursor, der.size()), X509_SIG_free);
+    if (!envelope || cursor != end) return error;
+    const X509_ALGOR *algorithm = nullptr;
+    const ASN1_OCTET_STRING *ciphertext = nullptr;
+    X509_SIG_get0(envelope.get(), &algorithm, &ciphertext);
+    const ASN1_OBJECT *object = nullptr;
+    const void *parameters = nullptr;
+    int type = 0;
+    X509_ALGOR_get0(&object, &type, &parameters, algorithm);
+    if (!object || OBJ_obj2nid(object) != NID_pbes2 || type != V_ASN1_SEQUENCE || !parameters) return error;
+    auto sequence = static_cast<const ASN1_STRING *>(parameters);
+    cursor = ASN1_STRING_get0_data(sequence);
+    end = cursor + ASN1_STRING_length(sequence);
+    auto pbes2 = std::unique_ptr<PBE2PARAM, decltype(&PBE2PARAM_free)>(d2i_PBE2PARAM(nullptr, &cursor, end - cursor), PBE2PARAM_free);
+    if (!pbes2 || cursor != end) return error;
+    X509_ALGOR_get0(&object, &type, &parameters, pbes2->keyfunc);
+    if (!object || OBJ_obj2nid(object) != NID_id_pbkdf2 || type != V_ASN1_SEQUENCE || !parameters) return error;
+    sequence = static_cast<const ASN1_STRING *>(parameters);
+    cursor = ASN1_STRING_get0_data(sequence);
+    end = cursor + ASN1_STRING_length(sequence);
+    auto pbkdf2 = std::unique_ptr<PBKDF2PARAM, decltype(&PBKDF2PARAM_free)>(d2i_PBKDF2PARAM(nullptr, &cursor, end - cursor), PBKDF2PARAM_free);
+    int64_t rounds = 0;
+    if (!pbkdf2 || cursor != end || ASN1_INTEGER_get_int64(&rounds, pbkdf2->iter) != 1 || rounds < 1 || rounds > 2000000 || !pbkdf2->salt || pbkdf2->salt->type != V_ASN1_OCTET_STRING || !pbkdf2->salt->value.octet_string || pbkdf2->salt->value.octet_string->length < 1 || pbkdf2->salt->value.octet_string->length > 1024) return error;
+    return {};
+}
+
+static int pemPassword(char *buffer, int size, int, void *data) {
+    const auto &passphrase = *static_cast<QByteArray *>(data);
+    if (passphrase.isEmpty() || passphrase.size() > size) return 0;
+    std::memcpy(buffer, passphrase.constData(), passphrase.size());
+    return passphrase.size();
+}
+
+QString validatePrivateKey(const QByteArray &contents, const QByteArray &passphrase, bool requireDecryption) {
+    if (contents.size() > 256 * 1024) return "This key is larger than 256 KiB.";
+    if (passphrase.size() > 32768 || passphrase.contains('\0') || passphrase.contains('\n') || passphrase.contains('\r')) return "The key passphrase contains unsupported characters or exceeds 32 KiB.";
+    auto normalized = contents;
+    normalized.replace("\r\n", "\n");
+    const auto text = QString::fromUtf8(normalized).trimmed();
+    if (text.startsWith("ssh-") || text.startsWith("ecdsa-") || text.startsWith("PuTTY-User-Key-File-") || !text.startsWith("-----BEGIN ") || !text.contains(" PRIVATE KEY-----")) return "Choose an OpenSSH or PEM private key, not a public key or PuTTY file.";
+    if (text.startsWith("-----BEGIN OPENSSH PRIVATE KEY-----")) {
+        const auto encoded = text.section('\n', 1, -2).remove('\n').toLatin1();
+        const auto binary = QByteArray::fromBase64(encoded, QByteArray::AbortOnBase64DecodingErrors);
+        if (binary.size() < 19 || binary.left(15) != QByteArray("openssh-key-v1\0", 15)) return "This private key is incomplete or invalid. Export it again and retry.";
+        const auto size = qFromBigEndian<quint32>(reinterpret_cast<const uchar *>(binary.constData() + 15));
+        if (size > 64 || binary.size() < 19 + static_cast<int>(size)) return "This private key is incomplete or invalid. Export it again and retry.";
+        const bool encrypted = binary.mid(19, size) != "none";
+        const auto structure = runOpenSshKeyValidation(normalized, {});
+        if (!structure.isEmpty()) return "This private key is incomplete or invalid. Export it again and retry.";
+        if (encrypted && passphrase.isEmpty()) return requireDecryption ? "Enter the passphrase for this encrypted private key." : QString();
+        if (!encrypted && !passphrase.isEmpty()) return requireDecryption ? "This private key is not encrypted. Clear the key passphrase and retry." : QString();
+        return encrypted ? runOpenSshKeyValidation(normalized, passphrase) : QString();
+    }
+    static const QRegularExpression envelope("^-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----\\n([\\s\\S]+)\\n-----END \\1-----$");
+    const auto match = envelope.match(text);
+    if (normalized.contains('\0') || normalized.contains('\r') || text.toUtf8() != normalized.trimmed() || !match.hasMatch()) return "This private key is incomplete or invalid. Export it again and retry.";
+    const auto body = match.captured(2);
+    const bool encrypted = match.captured(1) == "ENCRYPTED PRIVATE KEY" || body.contains("Proc-Type: 4,ENCRYPTED");
+    QByteArray encoded;
+    for (const auto &line : body.split('\n')) if (!line.isEmpty() && !line.contains(':')) encoded += line.toLatin1();
+    const auto decoded = QByteArray::fromBase64(encoded, QByteArray::AbortOnBase64DecodingErrors);
+    if (decoded.size() < 16) return "This private key is incomplete or invalid. Export it again and retry.";
+    if (match.captured(1) == "ENCRYPTED PRIVATE KEY") {
+        ERR_clear_error();
+        const auto kdfError = validatePkcs8Kdf(decoded);
+        ERR_clear_error();
+        if (!kdfError.isEmpty()) return kdfError;
+    }
+    if (encrypted && passphrase.isEmpty()) return requireDecryption ? "Enter the passphrase for this encrypted private key." : QString();
+    if (!encrypted && !passphrase.isEmpty()) return requireDecryption ? "This private key is not encrypted. Clear the key passphrase and retry." : QString();
+    auto password = passphrase;
+    auto bio = BIO_new_mem_buf(normalized.constData(), normalized.size());
+    ERR_clear_error();
+    auto key = bio ? PEM_read_bio_PrivateKey(bio, nullptr, pemPassword, &password) : nullptr;
+    auto context = key ? EVP_PKEY_CTX_new(key, nullptr) : nullptr;
+    const bool valid = context && EVP_PKEY_private_check(context) == 1;
+    if (context) EVP_PKEY_CTX_free(context);
+    if (key) EVP_PKEY_free(key);
+    if (bio) BIO_free(bio);
+    ERR_clear_error();
+    wipe(password);
+    if (!valid) return encrypted ? "The key passphrase is incorrect, or the encrypted key is damaged." : "This private key is incomplete or invalid. Export it again and retry.";
     return {};
 }
 
