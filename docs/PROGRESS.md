@@ -1,5 +1,11 @@
 # Harbor progress
 
+## Version 1.2.1: app icons and Mac installation
+
+The Mac icon bug was traced to a missing `CFBundleIconFile` in the processed app plist, despite the bundled ICNS resource. An explicit plist fixes icon resolution. Mac and Android now share a precise ivory anchor on maritime blue, with native Mac icon sizes and Android legacy, adaptive and monochrome launcher variants. SSH, vault and sync behavior are unchanged; Linux stays at 1.2.0.
+
+A versioned Mac DMG provides the normal drag-to-Applications installation flow. See [ICON-UPDATE.md](ICON-UPDATE.md) for artwork provenance, validation and install steps. Implementation was delegated to Sol 5.6 high; root handled design direction, review, documentation and delivery.
+
 ## Version 1.2.0: UX revision and encrypted keys
 
 Completed a cross-platform UI revision with compact charcoal surfaces, platform typography, aligned host details and revised host, pairing and session flows. More options and pairing Network options are usable at compact sizes. Direct private-key paste complements file import. Normal remote shell exit removes its session; transport failures retain recovery. Android replacement pairing preserves the previous library until the new first sync succeeds.
