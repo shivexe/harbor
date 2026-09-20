@@ -1,0 +1,216 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Trial build version without a tag
+        required: true
+        default: '1.2.2'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build_number: ${{ steps.version.outputs.build_number }}
+    steps:
+      - name: Validate version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          if [[ "$EVENT_NAME" == push ]]; then
+            [[ "$REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+            version="${REF_NAME#v}"
+          else
+            [[ "$INPUT_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+            version="$INPUT_VERSION"
+          fi
+          printf 'version=%s\nbuild_number=%s\n' "$version" "$((100 + RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+
+  tests:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  android:
+    needs: [prepare, tests]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@07976c6290703d34c16d382cb36445f98bb43b1f
+      - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      - name: Install Android SDK
+        run: sdkmanager --install 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+      - name: Build signed Android APK
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          signing_dir="$RUNNER_TEMP/harbor-signing-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -m 700 "$signing_dir"
+          trap 'rm -f "$GITHUB_WORKSPACE/android/android/key.properties"; rm -rf "$signing_dir"' EXIT
+          export SIGNING_KEY_FILE="$signing_dir/release.jks"
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          names = ('ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_PASSWORD', 'ANDROID_KEY_ALIAS')
+          if any(not os.environ.get(name) for name in names):
+              raise SystemExit('Android signing secrets are incomplete')
+          Path(os.environ['SIGNING_KEY_FILE']).write_bytes(base64.b64decode(''.join(os.environ['ANDROID_KEYSTORE_BASE64'].split()), validate=True))
+          def prop(value):
+              return ''.join(('\\' + c) if c in '\\=:# !' else ('\\n' if c == '\n' else c) for c in value)
+          values = {
+              'storeFile': os.environ['SIGNING_KEY_FILE'],
+              'storePassword': os.environ['ANDROID_KEYSTORE_PASSWORD'],
+              'keyPassword': os.environ['ANDROID_KEY_PASSWORD'],
+              'keyAlias': os.environ['ANDROID_KEY_ALIAS'],
+          }
+          Path('android/android/key.properties').write_text(''.join(f'{key}={prop(value)}\n' for key, value in values.items()))
+          PY
+          cd android
+          flutter pub get
+          flutter build apk --release --build-name "$VERSION" --build-number "$BUILD_NUMBER"
+          mkdir -p ../dist
+          cp build/app/outputs/flutter-apk/app-release.apk "../dist/harbor-$VERSION-android.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "../dist/harbor-$VERSION-android.apk"
+          badging="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "../dist/harbor-$VERSION-android.apk")"
+          [[ "$badging" == *"name='dev.harbor.app' versionCode='$BUILD_NUMBER' versionName='$VERSION'"* ]]
+      - name: Remove signing files
+        if: always()
+        run: |
+          rm -f "$GITHUB_WORKSPACE/android/android/key.properties"
+          rm -rf "$RUNNER_TEMP/harbor-signing-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: android
+          path: dist/*.apk
+          if-no-files-found: error
+
+  linux:
+    needs: [prepare, tests]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          persist-credentials: false
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake dpkg-dev qt6-base-dev libqtermwidget6-2-dev libutf8proc-dev libssl-dev libqrencode-dev openssh-client fontconfig fonts-dejavu-core
+      - name: Build Linux DEB
+        run: |
+          set -euo pipefail
+          bash linux/scripts/package.sh "$VERSION" "$GITHUB_WORKSPACE/dist"
+          deb="dist/harbor-$VERSION-linux-amd64.deb"
+          [[ "$(dpkg-deb -f "$deb" Version)" == "$VERSION" ]]
+          [[ "$(dpkg-deb -f "$deb" Architecture)" == amd64 ]]
+          depends="$(dpkg-deb -f "$deb" Depends)"
+          for package in libqt6core6 libqt6gui6 libqt6widgets6 libqt6network6 libqtermwidget6-2 libssl3 libqrencode4 qt6-qpa-plugins; do
+            [[ "$depends" == *"$package"* ]]
+          done
+          contents="$(dpkg-deb -c "$deb")"
+          for path in ./usr/bin/harbor ./usr/bin/harbor-askpass ./usr/share/applications/harbor.desktop ./usr/share/icons/hicolor/scalable/apps/harbor.svg ./usr/share/doc/harbor/THIRD_PARTY_NOTICES.md; do
+            [[ "$contents" == *"$path"* ]]
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linux
+          path: dist/*.deb
+          if-no-files-found: error
+
+  macos:
+    needs: [prepare, tests]
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          persist-credentials: false
+      - name: Build macOS DMG
+        run: bash macos/scripts/package.sh "$VERSION" "$BUILD_NUMBER" "$GITHUB_WORKSPACE/dist"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: macos
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push'
+    needs: [prepare, tests, android, linux, macos]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: '*'
+          path: dist
+          merge-multiple: true
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          cd dist
+          test -s "harbor-$VERSION-android.apk"
+          test -s "harbor-$VERSION-macos-universal.dmg"
+          test -s "harbor-$VERSION-linux-amd64.deb"
+          sha256sum "harbor-$VERSION-android.apk" "harbor-$VERSION-macos-universal.dmg" "harbor-$VERSION-linux-amd64.deb" > SHA256SUMS.txt
+      - name: Create and publish release
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --json isDraft --jq .isDraft > /tmp/harbor-draft-state 2>/dev/null; then
+            [[ "$(cat /tmp/harbor-draft-state)" == true ]] || { echo 'Refusing to overwrite a published release' >&2; exit 1; }
+          else
+            printf 'Harbor %s\n\nmacOS: This ad hoc signed app is not notarized. Use Open Anyway in Privacy & Security on first launch.\n\nLinux: The DEB targets Ubuntu 26.04 amd64.\n' "$VERSION" > /tmp/harbor-release-notes
+            gh release create "$TAG" --verify-tag --draft --title "Harbor $VERSION" --notes-file /tmp/harbor-release-notes
+          fi
+          gh release upload "$TAG" dist/*.apk dist/*.dmg dist/*.deb dist/SHA256SUMS.txt --clobber
+          gh release edit "$TAG" --draft=false

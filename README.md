@@ -20,4 +20,4 @@ Android keeps a read-only copy of your host settings and connects directly to se
 
 ## Learn more
 
-[Architecture](docs/architecture/harbor-architecture.svg) · [Sync protocol](docs/PROTOCOL.md) · [Supported key formats](docs/ENCRYPTED-KEYS.md) · [Linux dependency notices](linux/THIRD_PARTY_NOTICES.md)
+[Architecture](docs/architecture/harbor-architecture.svg) · [Sync protocol](docs/PROTOCOL.md) · [Supported key formats](docs/ENCRYPTED-KEYS.md) · [Release workflow](docs/RELEASING.md) · [Linux dependency notices](linux/THIRD_PARTY_NOTICES.md)

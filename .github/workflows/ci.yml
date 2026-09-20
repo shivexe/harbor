@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@07976c6290703d34c16d382cb36445f98bb43b1f
+      - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      - name: Install Android SDK
+        run: sdkmanager --install 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+      - name: Analyze and test Android
+        working-directory: android
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+          flutter build apk --debug
+
+  linux:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          persist-credentials: false
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake qt6-base-dev libqtermwidget6-2-dev libutf8proc-dev libssl-dev libqrencode-dev openssh-client fontconfig fonts-dejavu-core python3-cryptography
+      - name: Build and test Linux
+        run: |
+          cmake -S linux -B linux/build/ci -DCMAKE_BUILD_TYPE=Release
+          cmake --build linux/build/ci --parallel 2
+          ctest --test-dir linux/build/ci --output-on-failure
+          python3 shared/verify_protocol.py
+          python3 shared/test_sync_integration.py linux/build/ci/harbor-sync-fixture
+
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          persist-credentials: false
+      - name: Test macOS
+        env:
+          CI: 'true'
+        run: bash macos/scripts/test.sh
+      - name: Check macOS models
+        run: bash macos/scripts/check-models.sh
