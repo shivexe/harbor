@@ -14,10 +14,20 @@ import asyncssh
 
 
 class Server(asyncssh.SSHServer):
-    def __init__(self, public_key):
+    def __init__(self, public_key, banner=None, reject_shell=False, auth_delay=0):
         self.public_key = public_key
+        self.banner = banner
+        self.reject_shell = reject_shell
+        self.auth_delay = auth_delay
 
-    def begin_auth(self, username):
+    def connection_made(self, connection):
+        self.connection = connection
+
+    async def begin_auth(self, username):
+        if self.banner:
+            self.connection.send_auth_banner(self.banner)
+        if self.auth_delay:
+            await asyncio.sleep(self.auth_delay)
         return username != "noauth"
 
     def password_auth_supported(self):
@@ -33,10 +43,13 @@ class Server(asyncssh.SSHServer):
         return username == "harbor" and key == self.public_key
 
     def session_requested(self):
-        return Session()
+        return Session(self.reject_shell)
 
 
 class Session(asyncssh.SSHServerSession):
+    def __init__(self, reject_shell=False):
+        self.reject_shell = reject_shell
+
     def connection_made(self, channel):
         self.channel = channel
         self.master = None
@@ -58,7 +71,7 @@ class Session(asyncssh.SSHServerSession):
             fcntl.ioctl(self.master, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
 
     def shell_requested(self):
-        return True
+        return not self.reject_shell
 
     def exec_requested(self, command):
         self.command = command
@@ -149,7 +162,7 @@ async def run(args):
     old_ids = {host["name"]: host["id"] for host in json.loads(previous.read_text())} if previous.exists() else {}
     plain_key = client_key.export_private_key("openssh").decode()
     encrypted_key = client_key.export_private_key("openssh", passphrase="fixture-key-passphrase").decode()
-    server = await asyncssh.create_server(lambda: Server(client_key.convert_to_public()), "127.0.0.1", args.port, server_host_keys=[host_key], line_editor=False)
+    server = await asyncssh.create_server(lambda: Server(client_key.convert_to_public(), args.auth_banner, args.reject_shell, args.auth_delay), "127.0.0.1", args.port, server_host_keys=[host_key], line_editor=False)
     port = server.get_port()
     public_key = host_key.export_public_key("openssh").decode().strip().split(" ")[:2]
     pinned = " ".join(public_key)
@@ -176,4 +189,7 @@ if __name__ == "__main__":
     parser.add_argument("--directory", required=True)
     parser.add_argument("--host-key-type", choices=("ed25519", "rsa"), default="ed25519")
     parser.add_argument("--port", type=int, default=0)
+    parser.add_argument("--auth-banner")
+    parser.add_argument("--auth-delay", type=float, default=0)
+    parser.add_argument("--reject-shell", action="store_true")
     asyncio.run(run(parser.parse_args()))

@@ -30,7 +30,9 @@ struct ContentView: View {
     @State private var candidate: HostKeyCandidate?
     @State private var deleteHost: Host?
     @State private var showingSharing = false
-    @State private var scanning = false
+    @State private var scanningHost: Host?
+    @State private var scanError: String?
+    @State private var scanToken = UUID()
     @FocusState private var searchFocused: Bool
 
     private var filtered: [Host] {
@@ -70,7 +72,8 @@ struct ContentView: View {
             Button("Delete host", role: .destructive) { if let host = deleteHost { store.delete(host) }; deleteHost = nil }
         } message: { Text("The host will also be removed from Android after its next sync.") }
         .onReceive(NotificationCenter.default.publisher(for: .newHarborHost)) { _ in if store.loaded { editor = Host(auth: .none) } }
-        .onChange(of: store.loaded) { _, loaded in if !loaded { editor = nil; candidate = nil; showingSharing = false } }
+        .onChange(of: store.loaded) { _, loaded in if !loaded { cancelScan(); editor = nil; candidate = nil; showingSharing = false } }
+        .onChange(of: selection) { _, _ in if scanningHost != nil { cancelScan() } }
         .onChange(of: store.library.hosts.map(\.id)) { before, after in
             if before.isEmpty && after.count == 1 { selection = after.first }
             else if let selection, !after.contains(selection) { self.selection = after.first }
@@ -156,7 +159,9 @@ struct ContentView: View {
                 }
             }.padding(.horizontal, 32).padding(.top, 28).padding(.bottom, 22)
             Divider()
-            if store.sessions.isEmpty {
+            if let scanningHost {
+                scanWorkspace(scanningHost)
+            } else if store.sessions.isEmpty {
                 emptyWorkspace
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -168,7 +173,9 @@ struct ContentView: View {
                 }.background(Palette.sidebar).frame(height: 44)
                 ZStack {
                     ForEach(store.sessions) { session in
-                        TerminalSurface(session: session, active: store.activeSession == session.id).opacity(store.activeSession == session.id ? 1 : 0)
+                        SessionWorkspace(session: session, active: store.activeSession == session.id,
+                                         retry: { retry(session) }, edit: { edit(session) }, cancel: { store.close(session) })
+                            .opacity(store.activeSession == session.id ? 1 : 0)
                             .allowsHitTesting(store.activeSession == session.id).accessibilityHidden(store.activeSession != session.id)
                     }
                 }.padding(12).background(Palette.canvas)
@@ -183,12 +190,12 @@ struct ContentView: View {
                 if let host = selected {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(host.name).font(.system(size: 28, weight: .semibold))
-                        Text("\(host.username)@\(host.address):\(host.port)").font(.system(size: 14, design: .monospaced))
+                        Text("\(host.username)@\(host.address):\(String(host.port))").font(.system(size: 14, design: .monospaced))
                             .foregroundStyle(Palette.secondary).textSelection(.enabled)
                     }
                     HStack(spacing: 12) {
-                        Button { connect(host) } label: { Label(scanning ? "Verifying…" : "Connect", systemImage: "terminal") }
-                            .buttonStyle(HarborActionStyle()).disabled(scanning)
+                        Button { connect(host) } label: { Label("Connect", systemImage: "terminal") }
+                            .buttonStyle(HarborActionStyle())
                         Button("Edit host") { editor = host }.buttonStyle(.bordered).controlSize(.large)
                     }
                     VStack(alignment: .leading, spacing: 14) {
@@ -223,12 +230,60 @@ struct ContentView: View {
         else { store.connect(host) }
     }
     private func inspect(_ host: Host) {
-        scanning = true
+        let token = UUID()
+        scanToken = token
+        scanningHost = host
+        scanError = nil
         Task {
-            defer { scanning = false }
-            do { let value = try await SSH.inspect(host); if store.loaded { candidate = value } }
-            catch { store.error = error.localizedDescription }
+            do {
+                let value = try await SSH.inspect(host)
+                guard scanToken == token, store.loaded else { return }
+                scanningHost = nil
+                candidate = value
+            } catch {
+                guard scanToken == token, store.loaded else { return }
+                scanError = error.localizedDescription
+            }
         }
+    }
+    private func cancelScan() {
+        scanToken = UUID()
+        scanningHost = nil
+        scanError = nil
+    }
+    private func retry(_ session: TerminalSession) {
+        let id = session.host.id
+        store.close(session)
+        if let host = store.library.hosts.first(where: { $0.id == id }) { connect(host) }
+    }
+    private func edit(_ session: TerminalSession) {
+        let id = session.host.id
+        store.close(session)
+        editor = store.library.hosts.first(where: { $0.id == id })
+    }
+    private func scanWorkspace(_ host: Host) -> some View {
+        VStack(alignment: .leading, spacing: 22) {
+            Image(systemName: scanError == nil ? "checkmark.shield" : "exclamationmark.shield")
+                .font(.system(size: 34, weight: .light)).foregroundStyle(Palette.accent)
+            Text(scanError == nil ? "Checking server identity" : "Could not check server identity")
+                .font(.system(size: 27, weight: .semibold))
+            Text("\(host.username)@\(host.address):\(String(host.port))")
+                .font(.system(size: 13, design: .monospaced)).foregroundStyle(Palette.secondary)
+            if let scanError {
+                Text(scanError).font(.system(size: 14)).foregroundStyle(Palette.secondary)
+            } else {
+                HStack(spacing: 12) {
+                    ProgressView().controlSize(.small)
+                    Text("Retrieving the server key for your approval…")
+                        .font(.system(size: 14)).foregroundStyle(Palette.secondary)
+                }
+            }
+            HStack(spacing: 12) {
+                if scanError != nil { Button("Retry") { if let latest = store.library.hosts.first(where: { $0.id == host.id }) { inspect(latest) } }.buttonStyle(HarborActionStyle()) }
+                Button("Edit Config") { cancelScan(); editor = store.library.hosts.first(where: { $0.id == host.id }) }.buttonStyle(.bordered)
+                Button("Cancel") { cancelScan() }.buttonStyle(.bordered)
+            }
+        }.padding(48).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }
 
@@ -248,5 +303,101 @@ struct SessionTab: View {
             Button(action: close) { Image(systemName: "xmark").font(.system(size: 10)) }.buttonStyle(.plain).accessibilityLabel("Close \(session.host.name) session")
         }.padding(.horizontal, 16).frame(height: 43).background(active ? Palette.canvas : Palette.sidebar)
             .overlay(alignment: .bottom) { if active { Rectangle().fill(Palette.accent).frame(height: 2) } }.help(session.status)
+    }
+}
+
+struct SessionWorkspace: View {
+    @ObservedObject var session: TerminalSession
+    let active: Bool
+    let retry: () -> Void
+    let edit: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            TerminalSurface(session: session, active: active && session.lastMilestone == .ready)
+                .opacity(session.lastMilestone == .ready ? 1 : 0)
+                .allowsHitTesting(session.lastMilestone == .ready)
+                .accessibilityHidden(session.lastMilestone != .ready)
+            if session.lastMilestone != .ready {
+                ConnectionProgressView(session: session, retry: retry, edit: edit, cancel: cancel)
+            }
+        }
+    }
+}
+
+struct ConnectionProgressView: View {
+    @ObservedObject var session: TerminalSession
+    let retry: () -> Void
+    let edit: () -> Void
+    let cancel: () -> Void
+    @State private var serverMessage = ""
+    private let steps: [ConnectionPhase] = [.connecting, .verifying, .authenticating, .openingShell]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                Image(systemName: session.phase == .failed ? "exclamationmark.circle" : "point.3.connected.trianglepath.dotted")
+                    .font(.system(size: 35, weight: .light)).foregroundStyle(Palette.accent)
+                    .padding(.bottom, 20)
+                Text(session.phase == .failed ? "Connection failed" : session.phase == .ended ? "Session ended" : "Connecting to \(session.host.name)")
+                    .font(.system(size: 28, weight: .semibold)).padding(.bottom, 8)
+                Text("\(session.host.username)@\(session.host.address):\(String(session.host.port))")
+                    .font(.system(size: 13, design: .monospaced)).foregroundStyle(Palette.secondary)
+                    .textSelection(.enabled).padding(.bottom, 28)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(steps, id: \.rawValue) { step in
+                        HStack(spacing: 14) {
+                            Group {
+                                if session.lastMilestone.rawValue > step.rawValue {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.accent)
+                                } else if session.phase == step {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Image(systemName: "circle").foregroundStyle(Palette.secondary)
+                                }
+                            }.frame(width: 20, height: 20)
+                            Text(step.title).foregroundStyle(session.phase == step ? Palette.text : Palette.secondary)
+                        }.font(.system(size: 14)).frame(height: 42)
+                    }
+                }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12))
+                if let failure = session.failure {
+                    Text(failure).font(.system(size: 14)).foregroundStyle(Palette.text)
+                        .padding(.top, 20).fixedSize(horizontal: false, vertical: true)
+                }
+                if !serverMessage.isEmpty {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("Server message").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.secondary)
+                        Text(serverMessage).font(.system(size: 13, design: .monospaced)).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Palette.raised, in: RoundedRectangle(cornerRadius: 10)).padding(.top, 18)
+                }
+                }.frame(maxWidth: 540, alignment: .leading).padding(.horizontal, 44).padding(.top, 36).padding(.bottom, 26)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            Divider()
+            HStack(spacing: 12) {
+                if session.phase == .failed || session.phase == .ended {
+                    Button("Retry") { retry() }.buttonStyle(HarborActionStyle())
+                    Button("Edit Config") { edit() }.buttonStyle(.bordered)
+                    Button("Close") { cancel() }.buttonStyle(.bordered)
+                } else {
+                    Button("Cancel") { cancel() }.buttonStyle(.bordered)
+                }
+                Spacer()
+            }.frame(maxWidth: 540, alignment: .leading).padding(.horizontal, 44).padding(.vertical, 17)
+                .frame(maxWidth: .infinity, alignment: .leading).background(Palette.sidebar)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onReceive(Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()) { _ in
+                guard session.phase == .authenticating || session.phase == .openingShell else { return }
+                let data = session.terminal.getTerminal().getBufferAsData(kind: .normal)
+                let text = String(decoding: data.suffix(2048), as: UTF8.self)
+                let safe = String(String.UnicodeScalarView(text.unicodeScalars.filter { $0.value == 10 || $0.value >= 32 }))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                serverMessage = String(safe.suffix(1200))
+            }
     }
 }

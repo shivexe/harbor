@@ -320,8 +320,10 @@ Window::Window(Vault &vault) : vault_(vault), sync_(vault, this) {
     connect(lockButton, &QPushButton::clicked, this, &Window::lockVault);
     connect(tabs_, &QTabWidget::tabCloseRequested, this, [this](int index) {
         if (index == 0) return;
-        if (QMessageBox::question(this, "Close terminal", "Close this SSH session?", QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
         auto widget = tabs_->widget(index);
+        auto terminal = qobject_cast<Terminal *>(widget);
+        if (terminal && terminal->connected() && QMessageBox::question(this, "Close terminal", "Close this SSH session?", QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+        if (terminal) terminal->cancel();
         tabs_->removeTab(index);
         delete widget;
         if (tabs_->count() == 1) tabs_->tabBar()->hide();
@@ -338,8 +340,12 @@ Window::Window(Vault &vault) : vault_(vault), sync_(vault, this) {
 void Window::error(const std::exception &exception) { QMessageBox::critical(this, "Harbor", QString::fromUtf8(exception.what())); }
 
 QJsonObject Window::selectedHost() const {
-    if (!vault_.unlocked()) return {};
-    for (const auto &host : vault_.hosts()) if (host.toObject().value("id").toString() == selected_) return host.toObject();
+    return hostById(selected_);
+}
+
+QJsonObject Window::hostById(const QString &id) const {
+    if (!vault_.unlocked() || id.isEmpty()) return {};
+    for (const auto &host : vault_.hosts()) if (host.toObject().value("id").toString() == id) return host.toObject();
     return {};
 }
 
@@ -402,8 +408,8 @@ void Window::select() {
     fingerprint_->setText(key.isEmpty() ? "Server identity will be checked before connecting." : "Verified server key  ·  SHA256:" + QString::fromLatin1(QCryptographicHash::hash(QByteArray::fromBase64(key), QCryptographicHash::Sha256).toBase64(QByteArray::OmitTrailingEquals)));
 }
 
-void Window::editHost(bool creating) {
-    const auto original = creating ? QJsonObject() : selectedHost();
+void Window::editHost(bool creating, const QString &id) {
+    const auto original = creating ? QJsonObject() : id.isEmpty() ? selectedHost() : hostById(id);
     if (!creating && original.isEmpty()) return;
     QDialog dialog(this);
     dialog.setObjectName("hostEditor");
@@ -590,22 +596,44 @@ void Window::editHost(bool creating) {
         } catch (const std::exception &exception) { showError(exception.what()); }
     });
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    if (dialog.exec() == QDialog::Accepted) { refresh(); tabs_->setCurrentIndex(0); }
+    if (dialog.exec() == QDialog::Accepted) { refresh(); if (id.isEmpty()) tabs_->setCurrentIndex(0); }
 }
 
 void Window::connectHost() {
-    auto host = selectedHost();
+    openHost(selectedHost());
+}
+
+void Window::openHost(const QJsonObject &host) {
     if (host.isEmpty()) return;
     try {
-        if (host.value("hostKey").toString().isEmpty()) {
-            if (!Terminal::trustHost(host, this)) return;
-            vault_.upsert(host);
-        }
         auto terminal = new Terminal(host, tabs_);
         const auto index = tabs_->addTab(terminal, host.value("name").toString());
         tabs_->tabBar()->show();
         tabs_->setCurrentIndex(index);
-        connect(terminal, &Terminal::finished, this, [this, terminal] { const int i = tabs_->indexOf(terminal); if (i >= 0) tabs_->setTabText(i, tabs_->tabText(i) + " (closed)"); });
+        const auto id = host.value("id").toString();
+        auto closeAttempt = [this, terminal] {
+            const int i = tabs_->indexOf(terminal);
+            if (i < 0) return;
+            terminal->cancel();
+            tabs_->removeTab(i);
+            terminal->deleteLater();
+            if (tabs_->count() == 1) tabs_->tabBar()->hide();
+        };
+        connect(terminal, &Terminal::trustRequested, this, [this, terminal, host, id](const QString &key) {
+            try {
+                auto latest = hostById(id);
+                if (latest.isEmpty() || latest.value("hostname") != host.value("hostname") || latest.value("port") != host.value("port")) { terminal->showFailure("This host changed while its key was being checked. Retry with the latest settings."); return; }
+                latest["hostKey"] = key;
+                vault_.upsert(latest, true);
+                terminal->acceptHostKey(key);
+            } catch (const std::exception &exception) { terminal->showFailure(QString::fromUtf8(exception.what())); }
+        });
+        connect(terminal, &Terminal::retryRequested, this, [this, closeAttempt, id] { closeAttempt(); openHost(hostById(id)); });
+        connect(terminal, &Terminal::editRequested, this, [this, id] { editHost(false, id); });
+        connect(terminal, &Terminal::cancelRequested, this, closeAttempt);
+        connect(terminal, &Terminal::failed, this, [this, terminal] { const int i = tabs_->indexOf(terminal); if (i >= 0) tabs_->setTabText(i, tabs_->tabText(i) + " (failed)"); });
+        connect(terminal, &Terminal::finished, this, [this, terminal] { const int i = tabs_->indexOf(terminal); if (i >= 0) tabs_->setTabText(i, tabs_->tabText(i) + " (ended)"); });
+        QTimer::singleShot(0, terminal, [terminal] { terminal->start(); });
     } catch (const std::exception &exception) { error(exception); }
 }
 

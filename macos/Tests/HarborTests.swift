@@ -69,6 +69,30 @@ final class HarborTests: XCTestCase {
         XCTAssertNil(cache.nextExpiry)
     }
 
+    func testSSHDiagnosticMilestonesRequireOrderedLocalEvidence() {
+        var parser = SSHDiagnosticParser()
+        parser.consume("Authenticated to example using \"none\".\r\n")
+        XCTAssertEqual(parser.phase, .connecting)
+        parser.consume("debug2: shell request accepted on channel 0\r\n")
+        XCTAssertEqual(parser.phase, .connecting)
+        parser.consume("debug1: Connection established.\r\n")
+        XCTAssertEqual(parser.phase, .verifying)
+        parser.consume("debug1: Host 'example' is known and matches the ED25519 host key.\r\n")
+        XCTAssertEqual(parser.phase, .authenticating)
+        parser.consume("Authenticated to example using \"none\".\r\n")
+        XCTAssertEqual(parser.phase, .openingShell)
+        parser.consume("debug1: Entering interactive session.\r\n")
+        XCTAssertEqual(parser.phase, .openingShell)
+        parser.consume("debug2: shell request accepted on channel 0\r\n")
+        XCTAssertEqual(parser.phase, .ready)
+        parser.consume("debug1: Host 'example' is known and matches the ED25519 host key.\r\n")
+        XCTAssertEqual(parser.phase, .ready)
+        var failed = SSHDiagnosticParser()
+        failed.consume("Host key verification failed.\r\n")
+        XCTAssertNotNil(failed.failureHint)
+        XCTAssertEqual(failed.phase, .connecting)
+    }
+
     #if DEBUG
     @MainActor
     func testRedesignedScreenshots() async throws {
@@ -319,7 +343,119 @@ final class HarborTests: XCTestCase {
         let sessions = root.appendingPathComponent("Sessions")
         let entries = try FileManager.default.contentsOfDirectory(atPath: sessions.path)
         let files = try FileManager.default.contentsOfDirectory(atPath: sessions.appendingPathComponent(try XCTUnwrap(entries.first)).path)
-        XCTAssertEqual(Set(files), ["known_hosts"])
+        XCTAssertEqual(Set(files), ["known_hosts", "ssh-diagnostics"])
+    }
+
+    @MainActor
+    func testConnectionProgressAndSpacedKnownHostsPathAgainstDisposableServer() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixtureURL = workspace.appendingPathComponent(".work/ssh-progress-hosts.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else { throw XCTSkip("Disposable progress SSH fixture is unavailable.") }
+        let fixtures = try JSONDecoder().decode([WireHost].self, from: Data(contentsOf: fixtureURL))
+        XCTAssertEqual(fixtures.count, 4)
+        let root = workspace.appendingPathComponent(".work/Harbor QA Application Support \(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let port = 48608
+        for fixture in fixtures.filter({ $0.authType == "none" || ($0.authType == "key" && $0.passphrase.isEmpty) }) {
+            let auth = try XCTUnwrap(Host.Authentication(rawValue: fixture.authType))
+            var host = Host(name: fixture.name, address: "127.0.0.1", port: port, username: fixture.username, auth: auth)
+            host.secret = auth == .password ? fixture.password : fixture.passphrase
+            host.privateKey = fixture.privateKey
+            host.knownHosts = "[127.0.0.1]:\(port) \(fixture.hostKey)\n"
+            let session = try TerminalSession(host: host, root: root)
+            let window = NSWindow(contentRect: NSRect(x: 60, y: 60, width: 850, height: 560), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: SessionWorkspace(session: session, active: true, retry: {}, edit: {}, cancel: {}).background(Palette.canvas).preferredColorScheme(.dark))
+            window.makeKeyAndOrderFront(nil)
+            var closed = false
+            defer { if !closed { session.close(); window.close() } }
+            if auth == .none { try capture(window, to: workspace.appendingPathComponent(".work/mac-1.1.2-connecting.png")) }
+            try await Task.sleep(nanoseconds: 150_000_000)
+            XCTAssertNotNil(session.terminal.superview, "The hidden terminal did not mount for PTY authentication.")
+            let opened = await waitForPhase(session, .ready, seconds: 20)
+            let pendingOutput = String(data: session.terminal.getTerminal().getBufferAsData(kind: .normal), encoding: .utf8) ?? ""
+            XCTAssertTrue(opened, "Shell was not accepted for \(fixture.name): \(session.failure ?? session.status), latest milestone \(session.lastMilestone.title), password prompt \(pendingOutput.localizedCaseInsensitiveContains("password:")), permission denied \(pendingOutput.contains("Permission denied"))")
+            guard opened else { return }
+            try await Task.sleep(nanoseconds: 150_000_000)
+            XCTAssertNotNil(session.terminal.superview, "The terminal did not mount after shell acceptance.")
+            let prompt = await waitForTerminal(session, text: "harbor-fixture $", seconds: 8)
+            XCTAssertTrue(prompt, "The real terminal did not appear after shell acceptance for \(fixture.name).")
+            let marker = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            let command = Array("printf 'HARBOR_EXEC_%s_DONE\\n' '\(marker)'\r".utf8)
+            session.terminal.send(data: command[...])
+            let executed = await waitForTerminal(session, text: "HARBOR_EXEC_\(marker)_DONE", seconds: 8)
+            XCTAssertTrue(executed)
+            session.close()
+            window.close()
+            closed = true
+            let entries = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Sessions").path)
+            XCTAssertTrue(entries.isEmpty)
+        }
+        let fixture = try XCTUnwrap(fixtures.first { $0.authType == "none" })
+        var wrong = Host(name: "Changed server key", address: "127.0.0.1", port: port, username: fixture.username, auth: .none)
+        let parts = fixture.hostKey.split(separator: " ")
+        var bytes = try XCTUnwrap(Data(base64Encoded: String(try XCTUnwrap(parts.last))))
+        bytes[bytes.count - 1] ^= 1
+        wrong.knownHosts = "[127.0.0.1]:\(port) \(parts[0]) \(bytes.base64EncodedString())\n"
+        let rejected = try TerminalSession(host: wrong, root: root)
+        let failureWindow = NSWindow(contentRect: NSRect(x: 60, y: 60, width: 850, height: 560), styleMask: [.titled], backing: .buffered, defer: false)
+        failureWindow.isReleasedWhenClosed = false
+        failureWindow.contentView = NSHostingView(rootView: SessionWorkspace(session: rejected, active: true, retry: {}, edit: {}, cancel: {}).background(Palette.canvas).preferredColorScheme(.dark))
+        failureWindow.makeKeyAndOrderFront(nil)
+        defer { rejected.close(); failureWindow.close() }
+        let failed = await waitForPhase(rejected, .failed, seconds: 12)
+        XCTAssertTrue(failed)
+        XCTAssertEqual(rejected.lastMilestone, .verifying)
+        XCTAssertTrue(rejected.failure?.contains("server key") == true)
+        try capture(failureWindow, to: workspace.appendingPathComponent(".work/mac-1.1.2-failed.png"))
+        rejected.close()
+        let cancelled = try TerminalSession(host: Host(name: fixture.name, address: "127.0.0.1", port: port, username: fixture.username, auth: .none, knownHosts: "[127.0.0.1]:\(port) \(fixture.hostKey)\n"), root: root)
+        cancelled.close()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(cancelled.phase, .ended)
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Sessions").path)
+        XCTAssertTrue(remaining.isEmpty)
+    }
+
+    @MainActor
+    private func waitForPhase(_ session: TerminalSession, _ phase: ConnectionPhase, seconds: Int) async -> Bool {
+        for _ in 0..<(seconds * 10) {
+            if session.phase == phase { return true }
+            if session.phase == .failed && phase != .failed { return false }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        return false
+    }
+
+    @MainActor
+    func testPreauthenticationBannerCannotAdvanceConnectionProgress() async throws {
+        let workspace = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixtureURL = workspace.appendingPathComponent(".work/ssh-progress-banner.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else { throw XCTSkip("Disposable delayed banner fixture is unavailable.") }
+        let fixture = try JSONDecoder().decode(WireHost.self, from: Data(contentsOf: fixtureURL))
+        let root = workspace.appendingPathComponent(".work/banner-progress-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        var host = Host(name: fixture.name, address: "127.0.0.1", port: 48609, username: fixture.username, auth: .none)
+        host.knownHosts = "[127.0.0.1]:48609 \(fixture.hostKey)\n"
+        let session = try TerminalSession(host: host, root: root)
+        let window = NSWindow(contentRect: NSRect(x: 60, y: 60, width: 850, height: 560), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: SessionWorkspace(session: session, active: true, retry: {}, edit: {}, cancel: {}).background(Palette.canvas).preferredColorScheme(.dark))
+        window.makeKeyAndOrderFront(nil)
+        defer { session.close(); window.close() }
+        let verifying = await waitForPhase(session, .authenticating, seconds: 5)
+        XCTAssertTrue(verifying)
+        try await Task.sleep(nanoseconds: 800_000_000)
+        let output = String(data: session.terminal.getTerminal().getBufferAsData(kind: .normal), encoding: .utf8) ?? ""
+        XCTAssertTrue(output.contains("https://login.tailscale.com/a/harbor-fixture"))
+        XCTAssertTrue(output.contains("Authenticated to 127.0.0.1"))
+        XCTAssertEqual(session.phase, .authenticating)
+        XCTAssertEqual(session.lastMilestone, .authenticating)
+        try capture(window, to: workspace.appendingPathComponent(".work/mac-1.1.2-banner.png"))
+        let opened = await waitForPhase(session, .ready, seconds: 12)
+        XCTAssertTrue(opened, session.failure ?? session.status)
     }
 
     @MainActor

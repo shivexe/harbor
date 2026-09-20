@@ -1,5 +1,13 @@
 # Harbor progress
 
+## Version 1.1.2: connection progress and host-key path fix
+
+The reported ED25519 strict-checking failure was reproduced with a correctly approved key under a directory containing spaces. OpenSSH's `UserKnownHostsFile` value is now quoted correctly; strict checking and saved trust remain enabled. All three clients show connection steps and reveal the terminal only after shell acceptance, with visible recovery controls. Desktop Retry reads current host settings; Android retains read-only configuration and can sync before retry. Tailscale-style sign-in banners remain visible without controlling progress.
+
+Linux security, UI, terminal and connection fixtures passed; Android analysis, sixteen tests and real connection checks passed. Mac's full suite completed twenty cases with four opt-in skips and no failures; focused native no-password/private-key, altered-key, cancellation, spaced-path and delayed-banner checks passed. The newly signed Debug Mac credential helper requested Keychain approval, so password/passphrase Mac checks are explicitly unverified in that environment. See [CONNECTION-VALIDATION.md](CONNECTION-VALIDATION.md) for exact evidence.
+
+The update is delivered as `~/shivansh/notsg/Harbor/Harbor-1.1.2.app` on the supplied Mac and `~/Downloads/harbor-1.1.2-android.apk`. Quit the older Mac app before opening the update. Versioned installers, screenshots and source are in `artifacts/`; existing app copies, owner sessions and vaults are preserved.
+
 ## Version 1.1.1: passwordless SSH
 
 The user reported that Tailscale SSH needs only hostname and username. All three clients now support `authType: "none"`. Desktop new-host editors default to No password (Tailscale SSH), clear inactive credentials when saved, and retain server fingerprint verification. Existing password/key records remain unchanged. Mac native tests and a real passwordless terminal connection, Android analysis/tests and four SSH modes, Linux security/UI/terminal checks, and real Linux-to-Android encrypted sync passed. See [PASSWORDLESS-VALIDATION.md](PASSWORDLESS-VALIDATION.md).

@@ -10,6 +10,7 @@
 #include <QJsonDocument>
 #include <QTimer>
 #include <QKeyEvent>
+#include <QLabel>
 #include <iostream>
 int main(int argc, char **argv) {
     QApplication application(argc, argv);
@@ -30,7 +31,7 @@ int main(int argc, char **argv) {
     for (auto button : window.findChildren<QPushButton *>()) if (button->text() == "Connect") connectButton = button;
     if (!connectButton || !tree || !tabs || hosts.size() != 4) return 1;
     QStringList outputs;
-    outputs.resize(5);
+    outputs.resize(4);
     QList<QTermWidget *> terminals;
     for (int i = 0; i < 4; ++i) {
         tree->setCurrentItem(tree->topLevelItem(0)->child(i));
@@ -50,9 +51,8 @@ int main(int argc, char **argv) {
     vault.upsert(wrong);
     tree->setCurrentItem(tree->topLevelItem(0)->child(4));
     connectButton->click();
-    auto rejected = tabs->currentWidget()->findChild<QTermWidget *>();
+    auto rejected = qobject_cast<Terminal *>(tabs->currentWidget());
     if (!rejected) return 1;
-    QObject::connect(rejected, &QTermWidget::receivedData, &window, [&](const QString &data) { outputs[4] += data; });
     QTimer::singleShot(2500, &window, [&] {
         window.resize(1060, 690);
         for (int i = 0; i < terminals.size(); ++i) {
@@ -95,8 +95,10 @@ int main(int argc, char **argv) {
         }
         if (!outputs[0].contains("HARBOR_KEYBOARD_OK\r") || !outputs[2].contains("?1049h") || !outputs[2].contains("?1049l")) passed = false;
         std::cout << "keyboard editing=" << outputs[0].contains("HARBOR_KEYBOARD_OK\r") << " fullscreen editor=" << (outputs[2].contains("?1049h") && outputs[2].contains("?1049l")) << '\n';
-        if (!outputs[4].contains("REMOTE HOST IDENTIFICATION HAS CHANGED") || outputs[4].contains("harbor-fixture")) passed = false;
-        std::cout << "changed-key rejected=" << outputs[4].contains("REMOTE HOST IDENTIFICATION HAS CHANGED") << '\n';
+        auto reason = rejected->findChild<QLabel *>("connectionDetail");
+        const bool wrongKeyRejected = reason && reason->text().contains("saved server key does not match") && !rejected->connected();
+        if (!wrongKeyRejected) passed = false;
+        std::cout << "changed-key rejected=" << wrongKeyRejected << '\n';
         tabs->setCurrentIndex(3);
         if (passed) terminals[2]->sendText("clear; printf 'Harbor integration lab\\n\\nEncrypted private key authenticated.\\nPassword, key, and Tailscale-style no-auth sessions verified.\\nHost key changes refused before authentication.\\nANSI color and Unicode: ✓\\n\\n'; stty size\n");
         if (!passed) for (int i = 0; i < outputs.size(); ++i) std::cerr << "session " << i << ": " << outputs[i].toStdString() << '\n';

@@ -30,10 +30,12 @@ private:
     QPushButton *clearSearch_;
     QString selected_;
     QJsonObject selectedHost() const;
+    QJsonObject hostById(const QString &id) const;
     void refresh();
     void select();
-    void editHost(bool creating);
+    void editHost(bool creating, const QString &id = {});
     void connectHost();
+    void openHost(const QJsonObject &host);
     void removeHost();
     void pair();
     void devices();

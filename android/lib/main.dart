@@ -152,15 +152,23 @@ class _HostsScreenState extends State<HostsScreen> {
       MaterialPageRoute(
         builder: (_) => TerminalScreen(
           connection: connection,
-          onClose: () {
-            connection.close();
-            setState(() => sessions.remove(connection));
+          onClose: (current) {
+            current.close();
+            if (mounted) setState(() => sessions.remove(current));
+          },
+          onReplace: (previous, fresh) {
+            if (!mounted || !unlocked.value) {
+              throw StateError('Session closed');
+            }
+            final index = sessions.indexOf(previous);
+            if (index < 0) throw StateError('Session closed');
+            setState(() => sessions[index] = fresh);
           },
         ),
       ),
     );
     if (connection.closed) connection.dispose();
-    if (mounted) setState(() {});
+    if (mounted && unlocked.value) await load();
   }
 
   Future<void> forget() async {
